@@ -1,0 +1,10 @@
+{
+  "name": "Local Video Player",
+  "short_name": "LVP",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f141b",
+  "theme_color": "#1a2433",
+  "description": "Offline local video player web app.",
+  "icons": []
+}

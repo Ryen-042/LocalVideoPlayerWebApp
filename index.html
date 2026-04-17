@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Video Player</title>
+  <meta name="description" content="Offline local video player web app" />
+  <link rel="stylesheet" href="./vendor/plyr/plyr.css?v=1" />
+  <link rel="stylesheet" href="./vendor/fontawesome/css/all.min.css?v=1" />
+  <link rel="stylesheet" href="./styles.css?v=20260417d" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Local Video Player</h1>
+      <p class="muted">Desktop-style local playback</p>
+    </div>
+    <div class="topbar-actions">
+      <button id="openFilesBtn" class="btn dense-btn icon-only-btn" type="button" title="Open media files" aria-label="Open media files">
+        <i class="fa-solid fa-folder-open btn-icon" aria-hidden="true"></i>
+      </button>
+      <button id="openSubtitleBtn" class="btn dense-btn secondary icon-only-btn" type="button" title="Open subtitle file" aria-label="Open subtitle file">
+        <i class="fa-solid fa-closed-captioning btn-icon" aria-hidden="true"></i>
+      </button>
+      <button id="toggleSidePanel" class="btn dense-btn secondary icon-only-btn" type="button" aria-controls="sidePanel" aria-expanded="true" title="Collapse side panel" aria-label="Collapse side panel">
+        <i id="toggleSidePanelIcon" class="fa-solid fa-angles-left btn-icon" aria-hidden="true"></i>
+      </button>
+      <button id="toggleSettings" class="btn dense-btn secondary icon-only-btn" type="button" title="Open settings" aria-label="Open settings">
+        <i class="fa-solid fa-sliders btn-icon" aria-hidden="true"></i>
+      </button>
+    </div>
+  </header>
+
+  <input id="fileInput" class="native-picker" type="file" accept="video/*,audio/*,.mkv,.avi,.mp4,.webm,.mov,.mp3,.m4a,.aac,.flac,.ogg,.wav,.opus,.srt,.vtt,text/vtt,text/plain" multiple />
+  <input id="subtitleInput" class="native-picker" type="file" accept=".vtt,.srt,text/vtt,text/plain" />
+
+  <div id="modeBanner" class="mode-banner hidden" role="status" aria-live="polite"></div>
+
+  <main id="layoutRoot" class="layout" data-panel-collapsed="false">
+    <section class="player-stage">
+      <div class="video-shell" id="videoShell">
+        <video id="video" preload="metadata"></video>
+        <img id="audioCoverThumb" class="audio-cover-thumb hidden" alt="Embedded audio cover art" />
+        <div id="subtitleOverlay" class="subtitle-overlay hidden" aria-hidden="true"></div>
+        <div id="statusBanner" class="status-banner hidden"></div>
+      </div>
+
+      <section class="player-dock card" aria-label="Quick controls">
+        <div class="dock-group">
+          <button id="prevBtn" class="dock-btn" type="button" title="Previous file" aria-label="Previous file"><i class="fa-solid fa-backward-step" aria-hidden="true"></i></button>
+          <button id="stopBtn" class="dock-btn" type="button" title="Stop" aria-label="Stop"><i class="fa-solid fa-stop" aria-hidden="true"></i></button>
+          <button id="nextBtn" class="dock-btn" type="button" title="Next file" aria-label="Next file"><i class="fa-solid fa-forward-step" aria-hidden="true"></i></button>
+          <button id="shuffleBtn" class="dock-btn secondary" type="button" title="Shuffle playlist" aria-label="Shuffle playlist"><i class="fa-solid fa-shuffle" aria-hidden="true"></i></button>
+          <button id="repeatBtn" class="dock-btn secondary" type="button" title="Repeat mode" aria-label="Repeat mode"><i class="fa-solid fa-repeat" aria-hidden="true"></i></button>
+          <button id="removeCurrentBtn" class="dock-btn secondary" type="button" title="Remove current file" aria-label="Remove current file"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+          <button id="clearPlaylistBtn" class="dock-btn secondary" type="button" title="Clear playlist" aria-label="Clear playlist"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+        </div>
+        <div class="dock-group track-group">
+          <label class="track-select" title="Audio track">
+            <span>AUD</span>
+            <select id="audioTrackSelect"></select>
+          </label>
+          <label class="track-select" title="Subtitle track">
+            <span>SUB</span>
+            <select id="subtitleTrackSelect"></select>
+          </label>
+        </div>
+        <div class="dock-group track-group view-group">
+          <label class="track-select" title="Video frame mode">
+            <span>FRM</span>
+            <select id="frameModeSelect">
+              <option value="half-size">Half Size</option>
+              <option value="normal-size" selected>Normal Size</option>
+              <option value="double-size">Double Size</option>
+              <option value="stretch-window">Stretch To Window</option>
+              <option value="touch-inside">Touch Window From Inside</option>
+              <option value="zoom-1">Zoom 1</option>
+              <option value="zoom-2">Zoom 2</option>
+              <option value="touch-outside">Touch Window From Outside</option>
+            </select>
+          </label>
+          <label class="track-select" title="Video aspect ratio">
+            <span>AR</span>
+            <select id="aspectRatioSelect">
+              <option value="4:3">4:3</option>
+              <option value="5:4">5:4</option>
+              <option value="16:9">16:9</option>
+              <option value="235:100">235:100</option>
+              <option value="185:100">185:100</option>
+              <option value="auto" selected>Default (DAR)</option>
+              <option value="sar">Assume square pixels (SAR)</option>
+            </select>
+          </label>
+          <label class="track-select" title="Video zoom">
+            <span>ZOOM</span>
+            <select id="zoomSelect">
+              <option value="50">Half Size (50%)</option>
+              <option value="75">75%</option>
+              <option value="100" selected>Normal Size (100%)</option>
+              <option value="125">Zoom 1 (125%)</option>
+              <option value="150">Zoom 2 (150%)</option>
+              <option value="175">175%</option>
+              <option value="200">Double Size (200%)</option>
+              <option value="250">250%</option>
+              <option value="300">300%</option>
+            </select>
+          </label>
+        </div>
+      </section>
+    </section>
+
+    <aside id="sidePanel" class="side-panel" aria-label="Library panel">
+      <section class="card status-card">
+        <h2>Now Playing</h2>
+        <p id="nowPlayingLabel" class="muted">No media loaded</p>
+        <p id="abLabel" class="muted">A: -- | B: --</p>
+      </section>
+
+      <section class="card">
+        <h2>Playlist</h2>
+        <ol id="playlist" class="playlist"></ol>
+      </section>
+
+      <section class="card">
+        <h2>Recent Files</h2>
+        <ul id="recentFiles" class="recent-list"></ul>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <form method="dialog" class="settings-form">
+      <header class="settings-header">
+        <h2>Player Preferences</h2>
+        <p class="muted">Use tabs to configure playback behavior, timing, subtitle rendering, and global persistence.</p>
+      </header>
+
+      <nav class="settings-tabs" role="tablist" aria-label="Settings tabs">
+        <button class="settings-tab is-active" type="button" role="tab" aria-selected="true" data-settings-tab="playback">
+          <span class="tab-icon" aria-hidden="true">▶</span>
+          <span>Playback</span>
+        </button>
+        <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="timing">
+          <span class="tab-icon" aria-hidden="true">⏱</span>
+          <span>Timing</span>
+        </button>
+        <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="subtitles">
+          <span class="tab-icon" aria-hidden="true">CC</span>
+          <span>Subtitles</span>
+        </button>
+        <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="preferences">
+          <span class="tab-icon" aria-hidden="true">⚙</span>
+          <span>Preferences</span>
+        </button>
+      </nav>
+
+      <section class="settings-panel is-active" data-settings-panel="playback" role="tabpanel">
+        <section class="settings-section">
+          <h3>Session Controls</h3>
+          <p class="muted small">Open files from the top toolbar. Playlist and track controls are available directly under the player.</p>
+          <div class="row gap wrap settings-control-row">
+            <button id="playPauseBtn" class="btn" type="button">Play/Pause</button>
+            <button id="fullscreenBtn" class="btn secondary" type="button">Fullscreen</button>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3>Fallback Playback Inputs</h3>
+          <div class="seek-row">
+            <span id="currentTimeLabel" class="time-label">00:00</span>
+            <input id="seekInput" type="range" min="0" max="100" step="0.1" value="0" />
+            <span id="durationLabel" class="time-label">00:00</span>
+          </div>
+          <div class="sliders-row">
+            <label>
+              Volume
+              <input id="volumeInput" type="range" min="0" max="1" step="0.01" value="1" />
+            </label>
+            <label>
+              Speed
+              <select id="speedSelect">
+                <option value="0.5">0.5x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1" selected>1x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2">2x</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="settings-panel" data-settings-panel="timing" role="tabpanel" hidden>
+        <section class="settings-section">
+          <h3>A-B and Timing</h3>
+          <div class="row gap wrap settings-control-row">
+            <button id="setABeginBtn" class="btn" type="button">Set A</button>
+            <button id="setBEndBtn" class="btn" type="button">Set B</button>
+            <button id="toggleABLoopBtn" class="btn" type="button">Loop Off</button>
+            <button id="clearABBtn" class="btn secondary" type="button">Clear</button>
+          </div>
+          <div class="row gap wrap settings-form-grid">
+            <label>
+              Playback Offset (sec)
+              <input id="playbackOffsetInput" type="number" min="-10" max="10" step="0.1" value="0" />
+            </label>
+            <button id="applyPlaybackOffsetBtn" class="btn" type="button">Apply Nudge</button>
+          </div>
+          <div class="row gap wrap settings-form-grid">
+            <label>
+              Subtitle Offset (sec)
+              <input id="subtitleOffsetInput" type="number" min="-20" max="20" step="0.1" value="0" />
+            </label>
+            <label>
+              Audio Delay (sec)
+              <input id="audioDelayInput" type="number" min="-5" max="5" step="0.05" value="0" />
+            </label>
+          </div>
+          <div class="row gap wrap settings-preset-row">
+            <label class="inline-check"><input id="usePerVideoTiming" type="checkbox" /> Use per-video timing preset</label>
+            <button id="saveTimingPresetBtn" class="btn secondary" type="button">Save Preset</button>
+            <button id="clearTimingPresetBtn" class="btn secondary" type="button">Clear Preset</button>
+          </div>
+          <p id="audioDelayNote" class="muted small">Audio delay uses stream processing for positive values. Negative delay values are saved but need playback offset compensation.</p>
+        </section>
+      </section>
+
+      <section class="settings-panel" data-settings-panel="subtitles" role="tabpanel" hidden>
+        <section class="settings-section">
+          <h3>Subtitle Style</h3>
+          <div class="row gap wrap">
+            <label>
+              Font Size (px)
+              <input id="subtitleSizeInput" type="range" min="14" max="44" step="1" value="22" />
+            </label>
+            <label>
+              Vertical Position (%)
+              <input id="subtitlePositionInput" type="range" min="2" max="30" step="1" value="7" />
+            </label>
+            <label>
+              Background Opacity
+              <input id="subtitleBgOpacityInput" type="range" min="0" max="0.9" step="0.05" value="0.3" />
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="settings-panel" data-settings-panel="preferences" role="tabpanel" hidden>
+        <section class="settings-section">
+          <h3>Global Preferences</h3>
+          <p class="muted">These settings persist across sessions.</p>
+
+          <div class="settings-toggle-list">
+            <label class="inline-check"><input id="rememberLastFile" type="checkbox" /> Remember last file metadata</label>
+            <label class="inline-check"><input id="rememberPosition" type="checkbox" /> Remember playback position per file</label>
+            <label class="inline-check"><input id="autoplayNext" type="checkbox" /> Auto-play next file in playlist</label>
+            <label class="inline-check"><input id="enableShortcuts" type="checkbox" /> Enable keyboard shortcuts</label>
+            <label class="inline-check"><input id="rememberVolume" type="checkbox" /> Remember volume</label>
+            <label class="inline-check"><input id="rememberSpeed" type="checkbox" /> Remember speed</label>
+            <label class="inline-check"><input id="showSubtitlesByDefault" type="checkbox" /> Show subtitles by default</label>
+          </div>
+
+          <label>
+            Theme
+            <select id="themeSelect">
+              <option value="auto">Auto</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+
+          <label>
+            Seek Step (sec)
+            <input id="seekStep" type="number" min="1" max="60" step="1" value="5" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Keyboard Shortcuts</h3>
+          <p class="muted small">Click a binding and press a key combo. Use Escape, Backspace, or Delete to clear a binding.</p>
+          <div id="shortcutBindings" class="shortcut-bindings" role="group" aria-label="Keyboard shortcut bindings"></div>
+          <div class="row gap wrap settings-control-row">
+            <button id="resetShortcutsBtn" class="btn secondary" type="button">Reset Shortcut Defaults</button>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3>Data and Reset</h3>
+          <div class="row gap wrap settings-control-row">
+            <button id="resetSettingsBtn" class="btn secondary" type="button">Reset Defaults</button>
+            <button id="exportSettingsBtn" class="btn secondary" type="button">Export</button>
+            <label class="btn secondary file-btn">
+              Import
+              <input id="importSettingsInput" type="file" accept="application/json" />
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <div class="settings-footer row gap">
+        <button id="saveSettingsBtn" class="btn" value="default" type="submit">Save and Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./boot.js?v=20260417c"></script>
+</body>
+</html>
