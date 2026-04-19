@@ -7,7 +7,7 @@
   <meta name="description" content="Offline local video player web app" />
   <link rel="stylesheet" href="./vendor/plyr/plyr.css?v=1" />
   <link rel="stylesheet" href="./vendor/fontawesome/css/all.min.css?v=1" />
-  <link rel="stylesheet" href="./styles.css?v=20260417d" />
+  <link rel="stylesheet" href="./styles.css?v=20260419d" />
 </head>
 <body>
   <header class="topbar">
@@ -50,6 +50,7 @@
           <button id="prevBtn" class="dock-btn" type="button" title="Previous file" aria-label="Previous file"><i class="fa-solid fa-backward-step" aria-hidden="true"></i></button>
           <button id="stopBtn" class="dock-btn" type="button" title="Stop" aria-label="Stop"><i class="fa-solid fa-stop" aria-hidden="true"></i></button>
           <button id="nextBtn" class="dock-btn" type="button" title="Next file" aria-label="Next file"><i class="fa-solid fa-forward-step" aria-hidden="true"></i></button>
+          <button id="floatingModeBtn" class="dock-btn secondary" type="button" title="Pop out (Floating mode)" aria-label="Pop out (Floating mode)"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i><span class="dock-btn-label">Pop out</span></button>
           <button id="shuffleBtn" class="dock-btn secondary" type="button" title="Shuffle playlist" aria-label="Shuffle playlist"><i class="fa-solid fa-shuffle" aria-hidden="true"></i></button>
           <button id="repeatBtn" class="dock-btn secondary" type="button" title="Repeat mode" aria-label="Repeat mode"><i class="fa-solid fa-repeat" aria-hidden="true"></i></button>
           <button id="removeCurrentBtn" class="dock-btn secondary" type="button" title="Remove current file" aria-label="Remove current file"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
@@ -117,12 +118,30 @@
       </section>
 
       <section class="card">
-        <h2>Playlist</h2>
-        <ol id="playlist" class="playlist"></ol>
+        <div class="panel-heading-row">
+          <h2>Playlist</h2>
+          <div class="panel-heading-actions row gap">
+            <button id="togglePlaylistListBtn" class="btn secondary dense-btn" type="button">Fold</button>
+            <button id="savePlaylistFileBtn" class="btn secondary dense-btn" type="button">Save</button>
+            <label class="btn secondary file-btn dense-btn">
+              Load
+              <input id="importPlaylistInput" type="file" accept="application/json,.json,.lvpplaylist" />
+            </label>
+          </div>
+        </div>
+        <div id="playlistContainer">
+          <ol id="playlist" class="playlist"></ol>
+        </div>
       </section>
 
       <section class="card">
-        <h2>Recent Files</h2>
+        <div class="panel-heading-row">
+          <h2>Recent Files</h2>
+          <div class="panel-heading-actions row gap">
+            <button id="recentFoldAllBtn" class="btn secondary dense-btn" type="button">Fold all</button>
+            <button id="recentUnfoldAllBtn" class="btn secondary dense-btn" type="button">Unfold all</button>
+          </div>
+        </div>
         <ul id="recentFiles" class="recent-list"></ul>
       </section>
     </aside>
@@ -151,6 +170,10 @@
         <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="preferences">
           <span class="tab-icon" aria-hidden="true">⚙</span>
           <span>Preferences</span>
+        </button>
+        <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="keybindings">
+          <span class="tab-icon" aria-hidden="true">⌨</span>
+          <span>Keybindings</span>
         </button>
       </nav>
 
@@ -256,10 +279,12 @@
             <label class="inline-check"><input id="rememberPosition" type="checkbox" /> Remember playback position per file</label>
             <label class="inline-check"><input id="autoplayNext" type="checkbox" /> Auto-play next file in playlist</label>
             <label class="inline-check"><input id="enableShortcuts" type="checkbox" /> Enable keyboard shortcuts</label>
+            <label class="inline-check"><input id="preferGpuEnhancementNormalMode" type="checkbox" /> Prefer normal-mode GPU video enhancement compatibility</label>
             <label class="inline-check"><input id="rememberVolume" type="checkbox" /> Remember volume</label>
             <label class="inline-check"><input id="rememberSpeed" type="checkbox" /> Remember speed</label>
             <label class="inline-check"><input id="showSubtitlesByDefault" type="checkbox" /> Show subtitles by default</label>
           </div>
+          <p class="muted small">Compatibility mode minimizes compositor transforms in normal mode when frame zoom/offset are at defaults. Driver/browser limitations may still apply.</p>
 
           <label>
             Theme
@@ -277,15 +302,6 @@
         </section>
 
         <section class="settings-section">
-          <h3>Keyboard Shortcuts</h3>
-          <p class="muted small">Click a binding and press a key combo. Use Escape, Backspace, or Delete to clear a binding.</p>
-          <div id="shortcutBindings" class="shortcut-bindings" role="group" aria-label="Keyboard shortcut bindings"></div>
-          <div class="row gap wrap settings-control-row">
-            <button id="resetShortcutsBtn" class="btn secondary" type="button">Reset Shortcut Defaults</button>
-          </div>
-        </section>
-
-        <section class="settings-section">
           <h3>Data and Reset</h3>
           <div class="row gap wrap settings-control-row">
             <button id="resetSettingsBtn" class="btn secondary" type="button">Reset Defaults</button>
@@ -298,12 +314,35 @@
         </section>
       </section>
 
+      <section class="settings-panel" data-settings-panel="keybindings" role="tabpanel" hidden>
+        <section class="settings-section">
+          <h3>Navigation Behavior</h3>
+          <label class="inline-check"><input id="shortcutSectionNavigation" type="checkbox" /> Allow Next/Previous File shortcuts to navigate between sections</label>
+          <p class="muted small">When enabled, Next/Previous File shortcuts move across sections first and only switch files when the current file is already at the boundary section.</p>
+        </section>
+
+        <section class="settings-section">
+          <h3>Video Frame NumPad Controls</h3>
+          <label class="inline-check"><input id="enforceFrameConstraints" type="checkbox" /> Enforce frame size and position limits for NumPad resize/move shortcuts</label>
+          <p class="muted small">Resize: NumPad 6/4 width, 8/2 height, 9/1 diagonal, 5 reset. Move: Ctrl + NumPad arrows/diagonals, Ctrl + NumPad 5 reset position.</p>
+        </section>
+
+        <section class="settings-section">
+          <h3>Keyboard Shortcuts</h3>
+          <p class="muted small">Click a binding and press a key combo. Use Escape, Backspace, or Delete to clear a binding.</p>
+          <div id="shortcutBindings" class="shortcut-bindings" role="group" aria-label="Keyboard shortcut bindings"></div>
+          <div class="row gap wrap settings-control-row">
+            <button id="resetShortcutsBtn" class="btn secondary" type="button">Reset Shortcut Defaults</button>
+          </div>
+        </section>
+      </section>
+
       <div class="settings-footer row gap">
         <button id="saveSettingsBtn" class="btn" value="default" type="submit">Save and Close</button>
       </div>
     </form>
   </dialog>
 
-  <script src="./boot.js?v=20260417c"></script>
+  <script src="./boot.js?v=20260419d"></script>
 </body>
 </html>

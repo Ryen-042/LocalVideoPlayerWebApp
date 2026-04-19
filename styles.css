@@ -146,6 +146,10 @@ body::before {
 
 .video-shell {
   --video-zoom: 1;
+  --video-scale-x: 1;
+  --video-scale-y: 1;
+  --video-offset-x: 0px;
+  --video-offset-y: 0px;
   --shell-ratio: 16 / 9;
   position: relative;
   border-radius: 12px;
@@ -177,9 +181,9 @@ body::before {
   display: block;
   background: #000;
   object-fit: contain;
-  transform: scale(var(--video-zoom));
+  transform: translate(var(--video-offset-x), var(--video-offset-y)) scale(calc(var(--video-zoom) * var(--video-scale-x)), calc(var(--video-zoom) * var(--video-scale-y)));
   transform-origin: center center;
-  transition: transform 130ms ease, width 120ms ease, height 120ms ease;
+  transition: transform 100ms ease-out, width 120ms ease, height 120ms ease;
 }
 
 .video-shell > .plyr {
@@ -206,6 +210,49 @@ body::before {
 
 .video-shell .plyr__controls {
   z-index: 6;
+}
+
+.video-shell.is-gpu-enhancement-friendly > video,
+.video-shell.is-gpu-enhancement-friendly .plyr video,
+.video-shell.is-gpu-enhancement-friendly .audio-cover-thumb {
+  transform: none !important;
+}
+
+.video-shell.is-gpu-enhancement-friendly {
+  --video-zoom: 1;
+  --video-scale-x: 1;
+  --video-scale-y: 1;
+  --video-offset-x: 0px;
+  --video-offset-y: 0px;
+}
+
+.video-shell.is-gpu-enhancement-friendly .plyr__video-wrapper {
+  filter: none !important;
+  transform: none !important;
+}
+
+.video-shell.is-floating-active::after {
+  content: "Floating mode active";
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 8;
+  border: 1px solid var(--surface-edge);
+  border-radius: 999px;
+  background: rgba(16, 8, 28, 0.94);
+  color: #f7f0ff;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+}
+
+.video-shell.is-floating-active .plyr__video-wrapper,
+.video-shell.is-floating-active > video,
+.video-shell.is-floating-active .audio-cover-thumb,
+.video-shell.is-floating-active .subtitle-overlay {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .audio-cover-thumb {
@@ -303,6 +350,18 @@ body::before {
   line-height: 1;
 }
 
+.dock-btn-label {
+  margin-left: 0.3rem;
+  font-size: 0.69rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dock-btn.is-unsupported {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
 .dock-btn.is-active {
   border-color: color-mix(in srgb, var(--accent) 66%, var(--surface-edge) 34%);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent) inset;
@@ -366,6 +425,19 @@ body::before {
   letter-spacing: 0.07em;
 }
 
+.panel-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.panel-heading-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .status-card p {
   margin: 0.44rem 0 0;
   font-size: 0.79rem;
@@ -381,6 +453,10 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+}
+
+#playlistContainer[hidden] {
+  display: none;
 }
 
 .playlist .playlist-play-btn,
@@ -433,6 +509,82 @@ body::before {
   display: flex;
   gap: 0.26rem;
   align-items: stretch;
+}
+
+.recent-batch-item {
+  flex-direction: column;
+  border: 1px solid var(--surface-edge);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-alt) 88%, #130922 12%);
+  padding: 0.32rem;
+}
+
+.recent-batch-open-btn {
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0.2rem 0.28rem;
+}
+
+.recent-batch-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.recent-batch-action-btn {
+  min-height: 28px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.recent-batch-file-list {
+  list-style: none;
+  margin: 0.1rem 0 0;
+  padding: 0.28rem 0.2rem 0;
+  border-top: 1px dashed color-mix(in srgb, var(--surface-edge) 86%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.recent-batch-file-list[hidden] {
+  display: none !important;
+}
+
+.recent-batch-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.18rem 0.15rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+}
+
+.recent-batch-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.73rem;
+  color: var(--text);
+}
+
+.recent-batch-file-state {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--surface-edge);
+  border-radius: 999px;
+  padding: 0.08rem 0.34rem;
+  color: var(--muted);
+}
+
+.recent-batch-file-state.is-played {
+  color: color-mix(in srgb, var(--accent) 70%, #ffffff 30%);
+  border-color: color-mix(in srgb, var(--accent) 66%, var(--surface-edge) 34%);
 }
 
 .recent-remove-btn {
@@ -869,9 +1021,30 @@ select:focus-visible {
 }
 
 .shortcut-bindings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.shortcut-group {
+  border: 1px solid var(--surface-edge);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: color-mix(in srgb, var(--panel-alt) 84%, #150a29 16%);
+}
+
+.shortcut-group-title {
+  margin: 0 0 0.46rem;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.shortcut-group-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0.5rem 0.72rem;
+  gap: 0.45rem 0.68rem;
 }
 
 .shortcut-row {
@@ -1008,6 +1181,10 @@ select:focus-visible {
     min-width: 0;
   }
 
+  .dock-btn-label {
+    display: none;
+  }
+
   .settings-tabs {
     gap: 0.24rem;
   }
@@ -1019,7 +1196,7 @@ select:focus-visible {
 
   .settings-form-grid,
   .settings-toggle-list,
-  .shortcut-bindings {
+  .shortcut-group-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1037,5 +1214,10 @@ select:focus-visible {
   .dense-btn {
     flex: 1;
     justify-content: center;
+  }
+
+  .recent-batch-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

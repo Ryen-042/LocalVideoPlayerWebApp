@@ -1,6 +1,7 @@
 const SETTINGS_KEY = "lvp.settings.v1";
 const POSITIONS_KEY = "lvp.positions.v1";
 const RECENTS_KEY = "lvp.recents.v1";
+const RECENT_PLAYLISTS_KEY = "lvp.recent-playlists.v1";
 const TIMING_PRESETS_KEY = "lvp.timing-presets.v1";
 const UI_STATE_KEY = "lvp.ui.v1";
 const HANDLES_DB_NAME = "lvp.recent-handles.v1";
@@ -24,6 +25,24 @@ const SHORTCUT_DEFINITIONS = [
   { id: "fullscreenToggle", label: "Fullscreen", defaultBinding: "F" },
   { id: "nextFile", label: "Next File", defaultBinding: "N" },
   { id: "previousFile", label: "Previous File", defaultBinding: "P" },
+  { id: "nextSection", label: "Next Section", defaultBinding: "PageDown" },
+  { id: "previousSection", label: "Previous Section", defaultBinding: "PageUp" },
+  { id: "frameWidthIncrease", label: "Frame Width +", defaultBinding: "Numpad6" },
+  { id: "frameWidthDecrease", label: "Frame Width -", defaultBinding: "Numpad4" },
+  { id: "frameHeightIncrease", label: "Frame Height +", defaultBinding: "Numpad8" },
+  { id: "frameHeightDecrease", label: "Frame Height -", defaultBinding: "Numpad2" },
+  { id: "frameScaleDiagonalIncrease", label: "Frame Width+Height +", defaultBinding: "Numpad9" },
+  { id: "frameScaleDiagonalDecrease", label: "Frame Width+Height -", defaultBinding: "Numpad1" },
+  { id: "frameSizeReset", label: "Frame Size Reset", defaultBinding: "Numpad5" },
+  { id: "frameMoveLeft", label: "Frame Move Left", defaultBinding: "Ctrl+Numpad4" },
+  { id: "frameMoveRight", label: "Frame Move Right", defaultBinding: "Ctrl+Numpad6" },
+  { id: "frameMoveUp", label: "Frame Move Up", defaultBinding: "Ctrl+Numpad8" },
+  { id: "frameMoveDown", label: "Frame Move Down", defaultBinding: "Ctrl+Numpad2" },
+  { id: "frameMoveUpRight", label: "Frame Move Up-Right", defaultBinding: "Ctrl+Numpad9" },
+  { id: "frameMoveDownLeft", label: "Frame Move Down-Left", defaultBinding: "Ctrl+Numpad1" },
+  { id: "frameMoveUpLeft", label: "Frame Move Up-Left", defaultBinding: "Ctrl+Numpad7" },
+  { id: "frameMoveDownRight", label: "Frame Move Down-Right", defaultBinding: "Ctrl+Numpad3" },
+  { id: "framePositionReset", label: "Frame Position Reset", defaultBinding: "Ctrl+Numpad5" },
   { id: "abLoopToggle", label: "A-B Loop Toggle", defaultBinding: "A" }
 ];
 
@@ -34,12 +53,30 @@ const DEFAULT_SHORTCUT_BINDINGS = Object.freeze(
   }, {})
 );
 
+const SHORTCUT_GROUP_ORDER = [
+  "playback",
+  "navigation",
+  "timing",
+  "frame-resize",
+  "frame-move"
+];
+
+const SHORTCUT_GROUP_LABELS = {
+  playback: "Playback",
+  navigation: "Navigation",
+  timing: "Timing",
+  "frame-resize": "Frame Resize",
+  "frame-move": "Frame Move"
+};
+
 const SHORTCUT_NO_REPEAT_ACTIONS = new Set([
   "playPause",
   "muteToggle",
   "fullscreenToggle",
   "nextFile",
   "previousFile",
+  "nextSection",
+  "previousSection",
   "abLoopToggle"
 ]);
 
@@ -51,6 +88,9 @@ const defaults = {
   rememberVolume: true,
   rememberSpeed: true,
   showSubtitlesByDefault: true,
+  preferGpuEnhancementNormalMode: true,
+  shortcutSectionNavigation: false,
+  enforceFrameConstraints: true,
   theme: "auto",
   seekStep: 5,
   subtitleOffset: 0,
@@ -62,6 +102,10 @@ const defaults = {
   frameMode: "normal-size",
   aspectRatio: "auto",
   zoomPercent: 100,
+  frameScaleX: 1,
+  frameScaleY: 1,
+  frameOffsetXPx: 0,
+  frameOffsetYPx: 0,
   playlistShuffle: false,
   playlistRepeatMode: "off",
   savedVolume: 1,
@@ -102,6 +146,11 @@ const SEEK_PREVIEW_THUMB_WIDTH = 176;
 const SEEK_PREVIEW_THUMB_HEIGHT = 100;
 const SEEK_PREVIEW_SEEK_TIMEOUT_MS = 450;
 const AUDIO_DELAY_MAX_SECONDS = 5;
+const FRAME_RESIZE_STEP = 0.04;
+const FRAME_MIN_SCALE_CONSTRAINED = 0.5;
+const FRAME_MAX_SCALE_CONSTRAINED = 3;
+const FRAME_MIN_SCALE_FREE = 0.2;
+const FRAME_MAX_SCALE_FREE = 6;
 
 const MKV_IDS = {
   chapters: 0x1043A770,
@@ -128,7 +177,9 @@ const state = {
   settings: { ...defaults },
   ui: {
     sidePanelCollapsed: false,
-    settingsTab: "playback"
+    settingsTab: "playback",
+    playlistCollapsed: false,
+    recentBatchExpanded: {}
   },
   player: null,
   plyrCustomButtons: {},
@@ -139,6 +190,7 @@ const state = {
   subtitleCueIndex: 0,
   ab: { a: null, b: null, loop: false },
   recentFiles: [],
+  recentPlaylists: [],
   fileHandleByFingerprint: {},
   handleDbPromise: null,
   positions: {},
@@ -189,7 +241,11 @@ const state = {
     button: null
   },
   lastPersistAt: 0,
-  plyrInitAttempts: 0
+  plyrInitAttempts: 0,
+  floatingMode: {
+    supported: false,
+    active: false
+  }
 };
 
 const el = {
@@ -203,11 +259,18 @@ const el = {
   toggleSidePanel: document.getElementById("toggleSidePanel"),
   toggleSidePanelIcon: document.getElementById("toggleSidePanelIcon"),
   playlist: document.getElementById("playlist"),
+  playlistContainer: document.getElementById("playlistContainer"),
+  togglePlaylistListBtn: document.getElementById("togglePlaylistListBtn"),
+  savePlaylistFileBtn: document.getElementById("savePlaylistFileBtn"),
+  importPlaylistInput: document.getElementById("importPlaylistInput"),
   recentFiles: document.getElementById("recentFiles"),
+  recentFoldAllBtn: document.getElementById("recentFoldAllBtn"),
+  recentUnfoldAllBtn: document.getElementById("recentUnfoldAllBtn"),
   playPauseBtn: document.getElementById("playPauseBtn"),
   stopBtn: document.getElementById("stopBtn"),
   prevBtn: document.getElementById("prevBtn"),
   nextBtn: document.getElementById("nextBtn"),
+  floatingModeBtn: document.getElementById("floatingModeBtn"),
   shuffleBtn: document.getElementById("shuffleBtn"),
   repeatBtn: document.getElementById("repeatBtn"),
   fullscreenBtn: document.getElementById("fullscreenBtn"),
@@ -247,6 +310,9 @@ const el = {
   rememberPosition: document.getElementById("rememberPosition"),
   autoplayNext: document.getElementById("autoplayNext"),
   enableShortcuts: document.getElementById("enableShortcuts"),
+  preferGpuEnhancementNormalMode: document.getElementById("preferGpuEnhancementNormalMode"),
+  shortcutSectionNavigation: document.getElementById("shortcutSectionNavigation"),
+  enforceFrameConstraints: document.getElementById("enforceFrameConstraints"),
   rememberVolume: document.getElementById("rememberVolume"),
   rememberSpeed: document.getElementById("rememberSpeed"),
   showSubtitlesByDefault: document.getElementById("showSubtitlesByDefault"),
@@ -270,19 +336,32 @@ init();
 function init() {
   state.settings = loadJson(SETTINGS_KEY, defaults);
   state.settings.shortcuts = normalizeShortcutBindings(state.settings.shortcuts);
-  state.ui = loadJson(UI_STATE_KEY, { sidePanelCollapsed: false, settingsTab: "playback" });
+  state.ui = loadJson(UI_STATE_KEY, {
+    sidePanelCollapsed: false,
+    settingsTab: "playback",
+    playlistCollapsed: false,
+    recentBatchExpanded: {}
+  });
+  state.ui.playlistCollapsed = Boolean(state.ui.playlistCollapsed);
+  if (!state.ui.recentBatchExpanded || typeof state.ui.recentBatchExpanded !== "object" || Array.isArray(state.ui.recentBatchExpanded)) {
+    state.ui.recentBatchExpanded = {};
+  }
   state.positions = loadJson(POSITIONS_KEY, {});
   state.recentFiles = loadJson(RECENTS_KEY, []);
+  state.recentPlaylists = loadJson(RECENT_PLAYLISTS_KEY, []);
   state.timingPresets = loadJson(TIMING_PRESETS_KEY, {});
+  state.floatingMode.supported = supportsFloatingMode();
 
   syncSettingsUI();
   applySidePanelState();
+  applyPlaylistVisibilityState();
   applyTheme(state.settings.theme);
   applyPlaybackPreferences();
   applyVideoPresentation();
   updatePlaylistModeButtons();
   applySettingsTab();
   initializePlyr();
+  syncFloatingModeUi();
   applySubtitleStyle();
   hideSubtitleOverlay();
   setupFullscreenOrientationHandling();
@@ -303,6 +382,7 @@ function setupEventHandlers() {
   on(el.stopBtn, "click", stopPlayback);
   on(el.prevBtn, "click", playPrevious);
   on(el.nextBtn, "click", playNext);
+  on(el.floatingModeBtn, "click", toggleFloatingMode);
   on(el.shuffleBtn, "click", togglePlaylistShuffle);
   on(el.repeatBtn, "click", cyclePlaylistRepeatMode);
   on(el.fullscreenBtn, "click", toggleFullscreen);
@@ -322,6 +402,8 @@ function setupEventHandlers() {
   on(el.video, "error", onMediaError);
   on(el.video, "volumechange", onVideoVolumeChanged);
   on(el.video, "ratechange", onVideoRateChanged);
+  on(el.video, "enterpictureinpicture", onEnterFloatingMode);
+  on(el.video, "leavepictureinpicture", onLeaveFloatingMode);
 
   bindSectionTrackObservers();
 
@@ -342,6 +424,11 @@ function setupEventHandlers() {
 
   on(el.clearPlaylistBtn, "click", clearPlaylist);
   on(el.removeCurrentBtn, "click", removeCurrent);
+  on(el.togglePlaylistListBtn, "click", togglePlaylistVisibility);
+  on(el.savePlaylistFileBtn, "click", savePlaylistToFile);
+  on(el.importPlaylistInput, "change", importPlaylistFile);
+  on(el.recentFoldAllBtn, "click", () => setAllRecentBatchExpansion(false));
+  on(el.recentUnfoldAllBtn, "click", () => setAllRecentBatchExpansion(true));
 
   on(el.toggleSettings, "click", openSettingsDialog);
   on(el.settingsDialog, "close", saveSettingsFromUI);
@@ -369,6 +456,7 @@ function setupEventHandlers() {
 
   setupTouchGestures();
   setupDragAndDrop();
+  window.addEventListener("resize", onViewportResize, { passive: true });
   document.addEventListener("pointerdown", resumeAudioDelayContext, { passive: true });
   document.addEventListener("keydown", onKeyDown);
 }
@@ -452,7 +540,7 @@ function setupDragAndDrop() {
       return;
     }
 
-    addFilesToPlaylist(files);
+    addFilesToPlaylist(files, { sourceLabel: "Open files" });
     setStatus(`Dropped ${files.length} file${files.length === 1 ? "" : "s"}.`);
   };
 
@@ -522,7 +610,7 @@ async function onOpenFilesClicked() {
       files.push(file);
     }
 
-    addFilesToPlaylist(files);
+    addFilesToPlaylist(files, { sourceLabel: "Drag and drop" });
   } catch (error) {
     if (error?.name !== "AbortError") {
       setStatus("Open dialog failed. Falling back to browser file input.");
@@ -567,12 +655,13 @@ async function onOpenSubtitleClicked() {
 
 function onFilesSelected(event) {
   const files = Array.from(event.target.files || []);
-  addFilesToPlaylist(files);
+  addFilesToPlaylist(files, { sourceLabel: "Browser file input" });
 
   event.target.value = "";
 }
 
-function addFilesToPlaylist(files) {
+function addFilesToPlaylist(files, options = {}) {
+  const { suppressRecentBatch = false, sourceLabel = "Playlist batch" } = options;
   if (!files.length) {
     return;
   }
@@ -603,6 +692,10 @@ function addFilesToPlaylist(files) {
     state.playlist.push(file);
     maybeWarnForContainer(file.name);
   });
+
+  if (!suppressRecentBatch) {
+    rememberRecentPlaylistBatch(mediaFiles, sourceLabel);
+  }
 
   renderPlaylist();
   if (state.currentIndex === -1) {
@@ -774,6 +867,27 @@ function persistUiState() {
   localStorage.setItem(UI_STATE_KEY, JSON.stringify(state.ui));
 }
 
+function applyPlaylistVisibilityState() {
+  const collapsed = Boolean(state.ui.playlistCollapsed);
+
+  if (el.playlistContainer) {
+    el.playlistContainer.hidden = collapsed;
+  }
+
+  if (el.togglePlaylistListBtn) {
+    el.togglePlaylistListBtn.textContent = collapsed ? "Unfold" : "Fold";
+    el.togglePlaylistListBtn.setAttribute("aria-expanded", String(!collapsed));
+    el.togglePlaylistListBtn.title = collapsed ? "Show playlist" : "Hide playlist";
+    el.togglePlaylistListBtn.setAttribute("aria-label", el.togglePlaylistListBtn.title);
+  }
+}
+
+function togglePlaylistVisibility() {
+  state.ui.playlistCollapsed = !state.ui.playlistCollapsed;
+  applyPlaylistVisibilityState();
+  persistUiState();
+}
+
 function openSettingsDialog() {
   applySettingsTab();
   el.settingsDialog.showModal();
@@ -877,6 +991,12 @@ function applyVideoPresentation() {
   const frameModePreset = resolveFrameModePreset(frameMode);
   const effectiveScale = clamp((zoomPercent / 100) * frameModePreset.zoomMultiplier, 0.25, 6);
 
+  normalizeFrameTransformSettings();
+  const frameScaleX = Number(state.settings.frameScaleX || defaults.frameScaleX);
+  const frameScaleY = Number(state.settings.frameScaleY || defaults.frameScaleY);
+  const frameOffsetXPx = Number(state.settings.frameOffsetXPx || defaults.frameOffsetXPx);
+  const frameOffsetYPx = Number(state.settings.frameOffsetYPx || defaults.frameOffsetYPx);
+
   state.settings.frameMode = frameMode;
   state.settings.aspectRatio = aspectRatio;
   state.settings.zoomPercent = zoomPercent;
@@ -884,6 +1004,10 @@ function applyVideoPresentation() {
   if (el.videoShell) {
     el.videoShell.setAttribute("data-frame-mode", frameMode);
     el.videoShell.style.setProperty("--video-zoom", String(effectiveScale));
+    el.videoShell.style.setProperty("--video-scale-x", String(frameScaleX));
+    el.videoShell.style.setProperty("--video-scale-y", String(frameScaleY));
+    el.videoShell.style.setProperty("--video-offset-x", `${frameOffsetXPx}px`);
+    el.videoShell.style.setProperty("--video-offset-y", `${frameOffsetYPx}px`);
   }
 
   el.video.style.objectFit = frameModePreset.objectFit;
@@ -920,6 +1044,126 @@ function applyVideoPresentation() {
   if (el.zoomSelect) {
     el.zoomSelect.value = String(zoomPercent);
   }
+
+  applyGpuEnhancementCompatibilityMode();
+}
+
+function applyGpuEnhancementCompatibilityMode() {
+  if (!el.videoShell) {
+    return;
+  }
+
+  const preferCompatibility = state.settings.preferGpuEnhancementNormalMode !== false;
+  const isFloating = document.pictureInPictureElement === el.video || state.floatingMode.active;
+  const isFullscreen = Boolean(document.fullscreenElement);
+  const shouldUseNativePath = preferCompatibility && !isFloating && !isFullscreen;
+
+  el.videoShell.classList.toggle("is-gpu-enhancement-friendly", shouldUseNativePath);
+
+  if (shouldUseNativePath) {
+    el.video.style.willChange = "auto";
+  } else {
+    el.video.style.removeProperty("will-change");
+  }
+}
+
+function normalizeFrameTransformSettings() {
+  state.settings.enforceFrameConstraints = state.settings.enforceFrameConstraints !== false;
+
+  const scaleX = Number(state.settings.frameScaleX);
+  const scaleY = Number(state.settings.frameScaleY);
+  const offsetXPx = Number(state.settings.frameOffsetXPx);
+  const offsetYPx = Number(state.settings.frameOffsetYPx);
+
+  state.settings.frameScaleX = Number.isFinite(scaleX) ? scaleX : defaults.frameScaleX;
+  state.settings.frameScaleY = Number.isFinite(scaleY) ? scaleY : defaults.frameScaleY;
+  state.settings.frameOffsetXPx = Number.isFinite(offsetXPx) ? offsetXPx : defaults.frameOffsetXPx;
+  state.settings.frameOffsetYPx = Number.isFinite(offsetYPx) ? offsetYPx : defaults.frameOffsetYPx;
+
+  constrainFrameTransform();
+}
+
+function constrainFrameTransform() {
+  const isConstrained = Boolean(state.settings.enforceFrameConstraints);
+  const minScale = isConstrained ? FRAME_MIN_SCALE_CONSTRAINED : FRAME_MIN_SCALE_FREE;
+  const maxScale = isConstrained ? FRAME_MAX_SCALE_CONSTRAINED : FRAME_MAX_SCALE_FREE;
+
+  state.settings.frameScaleX = clamp(Number(state.settings.frameScaleX || 1), minScale, maxScale);
+  state.settings.frameScaleY = clamp(Number(state.settings.frameScaleY || 1), minScale, maxScale);
+
+  const shellRect = el.videoShell?.getBoundingClientRect?.();
+  const hasShellRect = Boolean(shellRect && shellRect.width > 0 && shellRect.height > 0);
+
+  const maxOffsetX = isConstrained && hasShellRect
+    ? Math.max(24, shellRect.width * 0.45)
+    : 5000;
+  const maxOffsetY = isConstrained && hasShellRect
+    ? Math.max(24, shellRect.height * 0.45)
+    : 5000;
+
+  state.settings.frameOffsetXPx = clamp(Number(state.settings.frameOffsetXPx || 0), -maxOffsetX, maxOffsetX);
+  state.settings.frameOffsetYPx = clamp(Number(state.settings.frameOffsetYPx || 0), -maxOffsetY, maxOffsetY);
+}
+
+function getFrameMoveStepPx() {
+  const shellRect = el.videoShell?.getBoundingClientRect?.();
+  if (!shellRect || !shellRect.width || !shellRect.height) {
+    return 20;
+  }
+
+  const relativeStep = Math.round(Math.min(shellRect.width, shellRect.height) * 0.03);
+  return clamp(relativeStep, 10, 36);
+}
+
+function queueFrameTransformSave() {
+  clearTimeout(queueFrameTransformSave.timer);
+  queueFrameTransformSave.timer = window.setTimeout(() => {
+    saveSettings();
+  }, 140);
+}
+
+function adjustFrameScale(deltaX, deltaY) {
+  normalizeFrameTransformSettings();
+
+  state.settings.frameScaleX = Number((state.settings.frameScaleX + deltaX).toFixed(3));
+  state.settings.frameScaleY = Number((state.settings.frameScaleY + deltaY).toFixed(3));
+
+  applyVideoPresentation();
+  queueFrameTransformSave();
+}
+
+function adjustFrameOffset(deltaX, deltaY) {
+  normalizeFrameTransformSettings();
+
+  state.settings.frameOffsetXPx = Number((state.settings.frameOffsetXPx + deltaX).toFixed(2));
+  state.settings.frameOffsetYPx = Number((state.settings.frameOffsetYPx + deltaY).toFixed(2));
+
+  applyVideoPresentation();
+  queueFrameTransformSave();
+}
+
+function resetFrameScale() {
+  state.settings.frameScaleX = defaults.frameScaleX;
+  state.settings.frameScaleY = defaults.frameScaleY;
+  applyVideoPresentation();
+  queueFrameTransformSave();
+  setStatus("Video frame size reset.");
+}
+
+function resetFrameOffset() {
+  state.settings.frameOffsetXPx = defaults.frameOffsetXPx;
+  state.settings.frameOffsetYPx = defaults.frameOffsetYPx;
+  applyVideoPresentation();
+  queueFrameTransformSave();
+  setStatus("Video frame position reset.");
+}
+
+function onViewportResize() {
+  if (!state.settings.enforceFrameConstraints) {
+    return;
+  }
+
+  applyVideoPresentation();
 }
 
 function normalizeFrameModeValue(value) {
@@ -1220,7 +1464,7 @@ function playAtIndex(index) {
     setStatus("Autoplay blocked by browser. Press Play to start.");
   });
 
-  rememberFile(file);
+  markRecentPlaylistItemPlayed(getFileFingerprint(file));
   renderPlaylist();
 }
 
@@ -2204,15 +2448,53 @@ function renderSectionMarkers() {
   });
 }
 
-function jumpToSection(index) {
+function jumpToSection(index, options = {}) {
+  const { announce = true } = options;
   const section = state.sections[index];
   if (!section) {
     return;
   }
 
   el.video.currentTime = section.start;
-  setStatus(`Section ${index + 1}: ${section.title}`);
+  if (announce) {
+    setStatus(`Section ${index + 1}: ${section.title}`);
+  }
   syncSectionNavigationState();
+}
+
+function findPreviousSectionIndex(now) {
+  let previousIndex = -1;
+  for (let i = 0; i < state.sections.length; i += 1) {
+    if (state.sections[i].start < now - SECTION_SYNC_EPSILON) {
+      previousIndex = i;
+      continue;
+    }
+    break;
+  }
+  return previousIndex;
+}
+
+function findNextSectionIndex(now) {
+  return state.sections.findIndex((section) => section.start > now + SECTION_SYNC_EPSILON);
+}
+
+function jumpToAdjacentSection(direction, options = {}) {
+  const { announce = true } = options;
+  if (!state.sections.length) {
+    return false;
+  }
+
+  const now = Number(el.video.currentTime || 0);
+  const targetIndex = direction < 0
+    ? findPreviousSectionIndex(now)
+    : findNextSectionIndex(now);
+
+  if (targetIndex < 0) {
+    return false;
+  }
+
+  jumpToSection(targetIndex, { announce });
+  return true;
 }
 
 function goToPreviousSection() {
@@ -2222,21 +2504,14 @@ function goToPreviousSection() {
   }
 
   const now = Number(el.video.currentTime || 0);
-  let previousIndex = -1;
-  for (let i = 0; i < state.sections.length; i += 1) {
-    if (state.sections[i].start < now - SECTION_SYNC_EPSILON) {
-      previousIndex = i;
-      continue;
-    }
-    break;
-  }
+  const previousIndex = findPreviousSectionIndex(now);
 
   if (previousIndex < 0) {
     setStatus("Already at the first section.");
     return;
   }
 
-  jumpToSection(previousIndex);
+  jumpToSection(previousIndex, { announce: true });
 }
 
 function goToNextSection() {
@@ -2246,14 +2521,14 @@ function goToNextSection() {
   }
 
   const now = Number(el.video.currentTime || 0);
-  const nextIndex = state.sections.findIndex((section) => section.start > now + SECTION_SYNC_EPSILON);
+  const nextIndex = findNextSectionIndex(now);
 
   if (nextIndex < 0) {
     setStatus("Already at the last section.");
     return;
   }
 
-  jumpToSection(nextIndex);
+  jumpToSection(nextIndex, { announce: true });
 }
 
 function syncSectionNavigationState() {
@@ -2505,6 +2780,7 @@ function resetExternalSubtitleState() {
 }
 
 function clearPlaylist() {
+  exitFloatingModeIfActive();
   releaseCurrentUrl();
   state.playlist = [];
   state.currentIndex = -1;
@@ -2525,6 +2801,9 @@ function removeCurrent() {
   }
 
   state.playlist.splice(state.currentIndex, 1);
+  if (!state.playlist.length) {
+    exitFloatingModeIfActive();
+  }
   releaseCurrentUrl();
 
   if (!state.playlist.length) {
@@ -2544,29 +2823,485 @@ function removeCurrent() {
   renderPlaylist();
 }
 
-function rememberFile(file) {
-  if (!state.settings.rememberLastFile) {
+function createPlaylistManifestEntry(file) {
+  return {
+    name: file.name,
+    size: Number(file.size || 0),
+    type: String(file.type || ""),
+    lastModified: Number(file.lastModified || 0),
+    fingerprint: getFileFingerprint(file)
+  };
+}
+
+function savePlaylistToFile() {
+  if (!Array.isArray(state.playlist) || !state.playlist.length) {
+    setStatus("Playlist is empty. Add media before saving a playlist file.");
     return;
   }
 
-  const fingerprint = getFileFingerprint(file);
-  const hasHandle = Boolean(state.fileHandleByFingerprint[fingerprint]);
-  const entry = {
-    name: file.name,
-    size: file.size,
-    type: file.type,
-    lastOpenedAt: new Date().toISOString(),
-    fingerprint,
-    hasHandle
+  const manifest = {
+    schema: "lvp.playlist.v1",
+    exportedAt: new Date().toISOString(),
+    currentIndex: state.currentIndex,
+    entries: state.playlist.map((file) => createPlaylistManifestEntry(file))
   };
 
-  state.recentFiles = [entry, ...state.recentFiles.filter((item) => item.fingerprint !== fingerprint)].slice(0, 20);
-  localStorage.setItem(RECENTS_KEY, JSON.stringify(state.recentFiles));
+  const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `local-video-player-playlist-${new Date().toISOString().slice(0, 10)}.lvpplaylist.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+
+  setStatus(`Saved playlist file with ${manifest.entries.length} item${manifest.entries.length === 1 ? "" : "s"}.`);
+}
+
+function normalizePlaylistManifestEntries(rawManifest) {
+  const manifest = rawManifest && typeof rawManifest === "object" ? rawManifest : {};
+
+  if (Array.isArray(manifest)) {
+    return manifest;
+  }
+
+  if (Array.isArray(manifest.entries)) {
+    return manifest.entries;
+  }
+
+  if (Array.isArray(manifest.files)) {
+    return manifest.files;
+  }
+
+  return [];
+}
+
+function normalizeImportedPlaylistEntry(rawEntry) {
+  if (!rawEntry || typeof rawEntry !== "object") {
+    return null;
+  }
+
+  const name = String(rawEntry.name || "").trim();
+  const size = Number(rawEntry.size || 0);
+  const type = String(rawEntry.type || "");
+  const lastModified = Number(rawEntry.lastModified || 0);
+  let fingerprint = String(rawEntry.fingerprint || "").trim();
+
+  if (!name) {
+    return null;
+  }
+
+  if (!fingerprint) {
+    fingerprint = `${name}:${size}:${lastModified}`;
+  }
+
+  return {
+    name,
+    size: Number.isFinite(size) ? size : 0,
+    type,
+    lastModified: Number.isFinite(lastModified) ? lastModified : 0,
+    fingerprint
+  };
+}
+
+async function importPlaylistFile(event) {
+  const file = event.target?.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const rawEntries = normalizePlaylistManifestEntries(parsed);
+    const entries = rawEntries
+      .map((rawEntry) => normalizeImportedPlaylistEntry(rawEntry))
+      .filter(Boolean);
+
+    if (!entries.length) {
+      setStatus("Playlist file has no importable entries.");
+      return;
+    }
+
+    await loadPlaylistFromManifestEntries(entries);
+  } catch {
+    setStatus("Unable to parse playlist file.");
+  } finally {
+    event.target.value = "";
+  }
+}
+
+async function loadPlaylistFromManifestEntries(entries) {
+  const existingFingerprints = new Set(state.playlist.map((playlistFile) => getFileFingerprint(playlistFile)));
+  const importedFingerprints = new Set();
+  const filesToAdd = [];
+  let unavailableCount = 0;
+  let duplicateCount = 0;
+
+  for (const entry of entries) {
+    const fingerprint = entry.fingerprint;
+    if (!fingerprint || importedFingerprints.has(fingerprint) || existingFingerprints.has(fingerprint)) {
+      duplicateCount += 1;
+      continue;
+    }
+
+    const handle = await loadRecentHandle(fingerprint);
+    if (!handle) {
+      unavailableCount += 1;
+      continue;
+    }
+
+    const permission = await ensureReadPermission(handle);
+    if (permission !== "granted") {
+      unavailableCount += 1;
+      continue;
+    }
+
+    try {
+      const mediaFile = await handle.getFile();
+      const resolvedFingerprint = getFileFingerprint(mediaFile);
+      await storeRecentHandle(resolvedFingerprint, handle);
+
+      if (existingFingerprints.has(resolvedFingerprint) || importedFingerprints.has(resolvedFingerprint)) {
+        duplicateCount += 1;
+        continue;
+      }
+
+      filesToAdd.push(mediaFile);
+      importedFingerprints.add(resolvedFingerprint);
+    } catch {
+      unavailableCount += 1;
+    }
+  }
+
+  if (filesToAdd.length) {
+    addFilesToPlaylist(filesToAdd, { sourceLabel: "Imported playlist" });
+  }
+
+  if (!filesToAdd.length) {
+    setStatus("No files from the playlist file could be restored. Ensure files were previously opened so handles are available.");
+    return;
+  }
+
+  setStatus(`Imported ${filesToAdd.length} playlist file${filesToAdd.length === 1 ? "" : "s"}${duplicateCount ? `, skipped ${duplicateCount} duplicate` : ""}${unavailableCount ? `, ${unavailableCount} unavailable` : ""}.`);
+}
+
+async function deleteRecentHandle(fingerprint) {
+  if (!fingerprint) {
+    return;
+  }
+
+  const db = await getHandleDb();
+  if (!db) {
+    return;
+  }
+
+  await new Promise((resolve) => {
+    try {
+      const tx = db.transaction(HANDLES_STORE_NAME, "readwrite");
+      tx.objectStore(HANDLES_STORE_NAME).delete(fingerprint);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+function persistRecentPlaylists() {
+  localStorage.setItem(RECENT_PLAYLISTS_KEY, JSON.stringify(state.recentPlaylists));
+}
+
+function createRecentPlaylistEntry(files, sourceLabel) {
+  const nowIso = new Date().toISOString();
+  const safeFiles = Array.isArray(files) ? files : [];
+
+  return {
+    id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    addedAt: nowIso,
+    sourceLabel: sourceLabel || "Playlist batch",
+    files: safeFiles.map((file) => {
+      const fingerprint = getFileFingerprint(file);
+      return {
+        name: file.name,
+        size: Number(file.size || 0),
+        type: String(file.type || ""),
+        lastModified: Number(file.lastModified || 0),
+        fingerprint,
+        hasHandle: Boolean(state.fileHandleByFingerprint[fingerprint]),
+        played: false
+      };
+    })
+  };
+}
+
+function rememberRecentPlaylistBatch(files, sourceLabel) {
+  if (!state.settings.rememberLastFile || !Array.isArray(files) || !files.length) {
+    return;
+  }
+
+  const entry = createRecentPlaylistEntry(files, sourceLabel);
+  if (!entry.files.length) {
+    return;
+  }
+
+  state.recentPlaylists = [entry, ...state.recentPlaylists].slice(0, 24);
+  persistRecentPlaylists();
+  renderRecentFiles();
+}
+
+function markRecentPlaylistItemPlayed(fingerprint) {
+  if (!fingerprint) {
+    return;
+  }
+
+  let changed = false;
+  state.recentPlaylists.forEach((playlistEntry) => {
+    if (!Array.isArray(playlistEntry.files)) {
+      return;
+    }
+
+    playlistEntry.files.forEach((fileEntry) => {
+      if (fileEntry.fingerprint !== fingerprint || fileEntry.played) {
+        return;
+      }
+
+      fileEntry.played = true;
+      changed = true;
+    });
+  });
+
+  if (!changed) {
+    return;
+  }
+
+  persistRecentPlaylists();
+  renderRecentFiles();
+}
+
+function getRecentPlaylistStats(playlistEntry) {
+  const fileEntries = Array.isArray(playlistEntry?.files) ? playlistEntry.files : [];
+  const totalCount = fileEntries.length;
+  const playedCount = fileEntries.reduce((count, fileEntry) => count + (fileEntry.played ? 1 : 0), 0);
+  const unplayedCount = Math.max(0, totalCount - playedCount);
+  return { totalCount, playedCount, unplayedCount };
+}
+
+function isVideoLikeRecentEntry(fileEntry) {
+  if (!fileEntry) {
+    return false;
+  }
+
+  const mimeType = String(fileEntry.type || "").toLowerCase();
+  if (mimeType.startsWith("video/")) {
+    return true;
+  }
+
+  const extension = getFileExtension(fileEntry.name || "");
+  return ["mp4", "webm", "mov", "mkv", "avi", "m4v"].includes(extension);
+}
+
+function getRecentBatchVideoCount(playlistEntry) {
+  const fileEntries = Array.isArray(playlistEntry?.files) ? playlistEntry.files : [];
+  return fileEntries.reduce((count, fileEntry) => count + (isVideoLikeRecentEntry(fileEntry) ? 1 : 0), 0);
+}
+
+function isRecentBatchExpandable(playlistEntry) {
+  return getRecentBatchVideoCount(playlistEntry) >= 2;
+}
+
+function isRecentBatchExpanded(entryId) {
+  return Boolean(state.ui.recentBatchExpanded?.[entryId]);
+}
+
+function setRecentBatchExpanded(entryId, expanded) {
+  if (!entryId) {
+    return;
+  }
+
+  if (!state.ui.recentBatchExpanded || typeof state.ui.recentBatchExpanded !== "object") {
+    state.ui.recentBatchExpanded = {};
+  }
+
+  if (expanded) {
+    state.ui.recentBatchExpanded[entryId] = true;
+  } else if (state.ui.recentBatchExpanded[entryId]) {
+    delete state.ui.recentBatchExpanded[entryId];
+  }
+
+  persistUiState();
+  renderRecentFiles();
+}
+
+function toggleRecentBatchExpanded(entryId) {
+  setRecentBatchExpanded(entryId, !isRecentBatchExpanded(entryId));
+}
+
+function setAllRecentBatchExpansion(expanded) {
+  if (!Array.isArray(state.recentPlaylists) || !state.recentPlaylists.length) {
+    return;
+  }
+
+  if (!state.ui.recentBatchExpanded || typeof state.ui.recentBatchExpanded !== "object") {
+    state.ui.recentBatchExpanded = {};
+  }
+
+  state.recentPlaylists.forEach((playlistEntry) => {
+    if (!isRecentBatchExpandable(playlistEntry)) {
+      return;
+    }
+
+    if (expanded) {
+      state.ui.recentBatchExpanded[playlistEntry.id] = true;
+    } else {
+      delete state.ui.recentBatchExpanded[playlistEntry.id];
+    }
+  });
+
+  persistUiState();
   renderRecentFiles();
 }
 
 function renderRecentFiles() {
+  if (!el.recentFiles) {
+    return;
+  }
+
+  if (!state.ui.recentBatchExpanded || typeof state.ui.recentBatchExpanded !== "object") {
+    state.ui.recentBatchExpanded = {};
+  }
+
+  const activeBatchIds = new Set((state.recentPlaylists || []).map((entry) => entry.id));
+  Object.keys(state.ui.recentBatchExpanded).forEach((entryId) => {
+    if (!activeBatchIds.has(entryId)) {
+      delete state.ui.recentBatchExpanded[entryId];
+    }
+  });
+
   el.recentFiles.innerHTML = "";
+
+  if (Array.isArray(state.recentPlaylists) && state.recentPlaylists.length) {
+    const expandableCount = state.recentPlaylists.reduce((count, playlistEntry) => count + (isRecentBatchExpandable(playlistEntry) ? 1 : 0), 0);
+    if (el.recentFoldAllBtn) {
+      el.recentFoldAllBtn.disabled = expandableCount === 0;
+    }
+    if (el.recentUnfoldAllBtn) {
+      el.recentUnfoldAllBtn.disabled = expandableCount === 0;
+    }
+
+    state.recentPlaylists.forEach((playlistEntry) => {
+      const stats = getRecentPlaylistStats(playlistEntry);
+      const hasExpandableDetails = isRecentBatchExpandable(playlistEntry);
+      const isExpanded = hasExpandableDetails && isRecentBatchExpanded(playlistEntry.id);
+      const li = document.createElement("li");
+      li.className = "recent-item recent-batch-item";
+
+      const openAllBtn = document.createElement("button");
+      openAllBtn.type = "button";
+      openAllBtn.className = "recent-open-btn recent-batch-open-btn";
+      openAllBtn.addEventListener("click", () => {
+        void openRecentPlaylistBatch(playlistEntry, { unplayedOnly: false });
+      });
+
+      const title = document.createElement("span");
+      title.className = "recent-main";
+      title.textContent = `${playlistEntry.sourceLabel || "Playlist batch"} - ${stats.totalCount} file${stats.totalCount === 1 ? "" : "s"}`;
+
+      const date = new Date(playlistEntry.addedAt || Date.now()).toLocaleString();
+      const meta = document.createElement("span");
+      meta.className = "recent-meta";
+      meta.textContent = `${date} - Played ${stats.playedCount}/${stats.totalCount}`;
+
+      const badge = document.createElement("span");
+      badge.className = "recent-badge";
+      badge.textContent = `${stats.unplayedCount} unplayed`;
+
+      openAllBtn.appendChild(title);
+      openAllBtn.appendChild(meta);
+      openAllBtn.appendChild(badge);
+
+      const actions = document.createElement("div");
+      actions.className = "recent-batch-actions";
+
+      if (hasExpandableDetails) {
+        const detailsToggleBtn = document.createElement("button");
+        detailsToggleBtn.type = "button";
+        detailsToggleBtn.className = "btn secondary recent-batch-action-btn";
+        detailsToggleBtn.textContent = isExpanded ? "Fold files" : "Unfold files";
+        detailsToggleBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleRecentBatchExpanded(playlistEntry.id);
+        });
+        actions.appendChild(detailsToggleBtn);
+      }
+
+      const openUnplayedBtn = document.createElement("button");
+      openUnplayedBtn.type = "button";
+      openUnplayedBtn.className = "btn secondary recent-batch-action-btn";
+      openUnplayedBtn.textContent = "Open Unplayed";
+      openUnplayedBtn.disabled = stats.unplayedCount <= 0;
+      openUnplayedBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void openRecentPlaylistBatch(playlistEntry, { unplayedOnly: true });
+      });
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "recent-remove-btn";
+      removeBtn.title = "Remove this playlist batch from recent files";
+      removeBtn.setAttribute("aria-label", "Remove this playlist batch from recent files");
+      removeBtn.innerHTML = "<i class=\"fa-solid fa-xmark\" aria-hidden=\"true\"></i>";
+      removeBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        removeRecentPlaylistEntry(playlistEntry.id);
+      });
+
+      actions.appendChild(openUnplayedBtn);
+      actions.appendChild(removeBtn);
+
+      li.appendChild(openAllBtn);
+      li.appendChild(actions);
+
+      if (hasExpandableDetails) {
+        const filesList = document.createElement("ul");
+        filesList.className = "recent-batch-file-list";
+        filesList.hidden = !isExpanded;
+
+        playlistEntry.files.forEach((fileEntry) => {
+          const fileItem = document.createElement("li");
+          fileItem.className = "recent-batch-file-item";
+
+          const name = document.createElement("span");
+          name.className = "recent-batch-file-name";
+          name.textContent = fileEntry.name || "Unnamed file";
+
+          const stateTag = document.createElement("span");
+          stateTag.className = `recent-batch-file-state${fileEntry.played ? " is-played" : ""}`;
+          stateTag.textContent = fileEntry.played ? "Played" : "Unplayed";
+
+          fileItem.appendChild(name);
+          fileItem.appendChild(stateTag);
+          filesList.appendChild(fileItem);
+        });
+
+        li.appendChild(filesList);
+      }
+
+      el.recentFiles.appendChild(li);
+    });
+
+    return;
+  }
+
+  if (el.recentFoldAllBtn) {
+    el.recentFoldAllBtn.disabled = true;
+  }
+  if (el.recentUnfoldAllBtn) {
+    el.recentUnfoldAllBtn.disabled = true;
+  }
+
   state.recentFiles.forEach((item) => {
     const li = document.createElement("li");
     li.className = "recent-item";
@@ -2575,7 +3310,7 @@ function renderRecentFiles() {
     btn.type = "button";
     btn.className = "recent-open-btn";
     btn.addEventListener("click", () => {
-      openRecentFile(item);
+      void openLegacyRecentFile(item);
     });
 
     const title = document.createElement("span");
@@ -2604,7 +3339,7 @@ function renderRecentFiles() {
     removeBtn.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      await removeRecentFileEntry(item.fingerprint);
+      await removeLegacyRecentFileEntry(item.fingerprint);
     });
 
     li.appendChild(btn);
@@ -2613,7 +3348,97 @@ function renderRecentFiles() {
   });
 }
 
-async function removeRecentFileEntry(fingerprint) {
+function removeRecentPlaylistEntry(entryId) {
+  if (!entryId) {
+    return;
+  }
+
+  state.recentPlaylists = state.recentPlaylists.filter((entry) => entry.id !== entryId);
+  if (state.ui.recentBatchExpanded && state.ui.recentBatchExpanded[entryId]) {
+    delete state.ui.recentBatchExpanded[entryId];
+    persistUiState();
+  }
+  persistRecentPlaylists();
+  renderRecentFiles();
+  setStatus("Removed recent playlist batch.");
+}
+
+async function openRecentPlaylistBatch(playlistEntry, options = {}) {
+  const { unplayedOnly = false } = options;
+  if (!playlistEntry || !Array.isArray(playlistEntry.files)) {
+    return;
+  }
+
+  const targetEntries = playlistEntry.files.filter((fileEntry) => !unplayedOnly || !fileEntry.played);
+  if (!targetEntries.length) {
+    setStatus("No matching files in this recent playlist batch.");
+    return;
+  }
+
+  const filesToAdd = [];
+  let unavailableCount = 0;
+  let alreadyInPlaylistCount = 0;
+  let changed = false;
+
+  for (const fileEntry of targetEntries) {
+    const inPlaylist = state.playlist.some((file) => getFileFingerprint(file) === fileEntry.fingerprint);
+    if (inPlaylist) {
+      alreadyInPlaylistCount += 1;
+      continue;
+    }
+
+    const handle = await loadRecentHandle(fileEntry.fingerprint);
+    if (!handle) {
+      unavailableCount += 1;
+      continue;
+    }
+
+    const permission = await ensureReadPermission(handle);
+    if (permission !== "granted") {
+      unavailableCount += 1;
+      continue;
+    }
+
+    try {
+      const file = await handle.getFile();
+      const fingerprint = getFileFingerprint(file);
+      await storeRecentHandle(fingerprint, handle);
+
+      filesToAdd.push(file);
+      if (fileEntry.fingerprint !== fingerprint) {
+        fileEntry.fingerprint = fingerprint;
+        changed = true;
+      }
+      if (!fileEntry.hasHandle) {
+        fileEntry.hasHandle = true;
+        changed = true;
+      }
+    } catch {
+      unavailableCount += 1;
+    }
+  }
+
+  if (filesToAdd.length) {
+    addFilesToPlaylist(filesToAdd, {
+      suppressRecentBatch: true,
+      sourceLabel: "Recent playlist"
+    });
+  }
+
+  if (changed) {
+    persistRecentPlaylists();
+  }
+
+  if (!filesToAdd.length) {
+    setStatus("No files could be reopened from this recent playlist batch.");
+    return;
+  }
+
+  const scopeLabel = unplayedOnly ? "unplayed files" : "files";
+  setStatus(`Reopened ${filesToAdd.length} ${scopeLabel}${alreadyInPlaylistCount ? `, skipped ${alreadyInPlaylistCount} already in playlist` : ""}${unavailableCount ? `, ${unavailableCount} unavailable` : ""}.`);
+}
+
+async function removeLegacyRecentFileEntry(fingerprint) {
   if (!fingerprint) {
     return;
   }
@@ -2627,32 +3452,10 @@ async function removeRecentFileEntry(fingerprint) {
 
   await deleteRecentHandle(fingerprint);
   renderRecentFiles();
-  setStatus("Removed recent file entry.");
+  setStatus("Removed legacy recent file entry.");
 }
 
-async function deleteRecentHandle(fingerprint) {
-  if (!fingerprint) {
-    return;
-  }
-
-  const db = await getHandleDb();
-  if (!db) {
-    return;
-  }
-
-  await new Promise((resolve) => {
-    try {
-      const tx = db.transaction(HANDLES_STORE_NAME, "readwrite");
-      tx.objectStore(HANDLES_STORE_NAME).delete(fingerprint);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    } catch {
-      resolve();
-    }
-  });
-}
-
-async function openRecentFile(item) {
+async function openLegacyRecentFile(item) {
   if (!item) {
     return;
   }
@@ -2682,6 +3485,7 @@ async function openRecentFile(item) {
 
     if (currentFingerprint !== item.fingerprint) {
       item.fingerprint = currentFingerprint;
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(state.recentFiles));
     }
 
     state.playlist.push(file);
@@ -2702,6 +3506,25 @@ async function storeRecentHandle(fingerprint, handle) {
   }
 
   state.fileHandleByFingerprint[fingerprint] = handle;
+
+  let recentPlaylistsChanged = false;
+  state.recentPlaylists.forEach((playlistEntry) => {
+    if (!Array.isArray(playlistEntry.files)) {
+      return;
+    }
+
+    playlistEntry.files.forEach((fileEntry) => {
+      if (fileEntry.fingerprint === fingerprint && !fileEntry.hasHandle) {
+        fileEntry.hasHandle = true;
+        recentPlaylistsChanged = true;
+      }
+    });
+  });
+
+  if (recentPlaylistsChanged) {
+    persistRecentPlaylists();
+    renderRecentFiles();
+  }
 
   const db = await getHandleDb();
   if (!db) {
@@ -2979,6 +3802,107 @@ function toggleFullscreen() {
   }
 }
 
+function supportsFloatingMode() {
+  return Boolean(document.pictureInPictureEnabled
+    && el.video
+    && typeof el.video.requestPictureInPicture === "function");
+}
+
+async function toggleFloatingMode() {
+  if (!state.floatingMode.supported) {
+    setStatus("Floating mode is not supported by this browser.");
+    return;
+  }
+
+  try {
+    if (document.pictureInPictureElement === el.video) {
+      await document.exitPictureInPicture();
+      return;
+    }
+
+    if (!el.video.src) {
+      setStatus("Load media before using floating mode.");
+      return;
+    }
+
+    await el.video.requestPictureInPicture();
+  } catch {
+    setStatus("Unable to toggle floating mode in this browser context.");
+  }
+}
+
+function onEnterFloatingMode() {
+  state.floatingMode.active = true;
+  if (el.videoShell) {
+    el.videoShell.classList.add("is-floating-active");
+  }
+  applyGpuEnhancementCompatibilityMode();
+  syncFloatingModeUi();
+  setStatus("Floating mode active.");
+}
+
+function onLeaveFloatingMode() {
+  state.floatingMode.active = false;
+  if (el.videoShell) {
+    el.videoShell.classList.remove("is-floating-active");
+  }
+  applyGpuEnhancementCompatibilityMode();
+  syncFloatingModeUi();
+  setStatus("Returned from floating mode.");
+}
+
+function exitFloatingModeIfActive() {
+  if (document.pictureInPictureElement !== el.video || typeof document.exitPictureInPicture !== "function") {
+    return;
+  }
+
+  document.exitPictureInPicture().catch(() => {
+    // Ignore failures when browser leaves PiP automatically.
+  });
+}
+
+function syncFloatingModeUi() {
+  const isSupported = Boolean(state.floatingMode.supported);
+  const isActive = Boolean(state.floatingMode.active);
+
+  if (el.floatingModeBtn) {
+    el.floatingModeBtn.disabled = !isSupported;
+    el.floatingModeBtn.classList.toggle("is-active", isActive);
+    el.floatingModeBtn.classList.toggle("is-unsupported", !isSupported);
+
+    const label = !isSupported
+      ? "Floating unavailable"
+      : isActive
+        ? "Return from floating"
+        : "Pop out";
+
+    el.floatingModeBtn.title = !isSupported
+      ? "Floating mode unavailable in this browser"
+      : isActive
+        ? "Return from floating mode"
+        : "Pop out (Floating mode)";
+    el.floatingModeBtn.setAttribute("aria-label", el.floatingModeBtn.title);
+
+    const labelNode = el.floatingModeBtn.querySelector(".dock-btn-label");
+    if (labelNode) {
+      labelNode.textContent = label;
+    }
+  }
+
+  const floatingButton = state.plyrCustomButtons.floating;
+  if (floatingButton) {
+    floatingButton.disabled = !isSupported;
+    floatingButton.classList.toggle("is-active", isActive);
+    floatingButton.classList.toggle("is-disabled", !isSupported);
+    floatingButton.title = !isSupported
+      ? "Floating mode unavailable"
+      : isActive
+        ? "Return from floating mode"
+        : "Pop out (Floating mode)";
+    floatingButton.setAttribute("aria-label", floatingButton.title);
+  }
+}
+
 function initializePlyr() {
   if (state.plyrInitAttempts > 12) {
     return;
@@ -3071,6 +3995,7 @@ function injectPlyrCustomControls() {
   addButton(viewGroup, "fa-solid fa-up-right-and-down-left-from-center", "Cycle aspect ratio", cycleAspectRatio);
   addButton(viewGroup, "fa-solid fa-magnifying-glass-minus", "Zoom out", () => stepZoom(-1));
   addButton(viewGroup, "fa-solid fa-magnifying-glass-plus", "Zoom in", () => stepZoom(1));
+  state.plyrCustomButtons.floating = addButton(viewGroup, "fa-solid fa-up-right-from-square", "Pop out (Floating mode)", toggleFloatingMode);
 
   const trackGroup = createGroup("is-track");
   addButton(trackGroup, "fa-solid fa-music", "Cycle audio track", cycleAudioTrack);
@@ -3093,6 +4018,7 @@ function injectPlyrCustomControls() {
   renderSectionMarkers();
   syncSectionNavigationState();
   setupProgressHoverPreview();
+  syncFloatingModeUi();
 }
 
 function setupProgressHoverPreview() {
@@ -3657,6 +4583,9 @@ function applyAudioDelayProcessing() {
 
 function applyPlaybackPreferences() {
   state.settings.shortcuts = normalizeShortcutBindings(state.settings.shortcuts);
+  state.settings.preferGpuEnhancementNormalMode = state.settings.preferGpuEnhancementNormalMode !== false;
+  state.settings.shortcutSectionNavigation = Boolean(state.settings.shortcutSectionNavigation);
+  state.settings.enforceFrameConstraints = state.settings.enforceFrameConstraints !== false;
 
   if (state.settings.rememberVolume) {
     el.video.volume = clamp(Number(state.settings.savedVolume || 1), 0, 1);
@@ -3676,6 +4605,7 @@ function applyPlaybackPreferences() {
   state.settings.frameMode = normalizeFrameModeValue(state.settings.frameMode || defaults.frameMode);
   state.settings.aspectRatio = normalizeAspectRatioSelection(state.settings.aspectRatio || defaults.aspectRatio);
   state.settings.zoomPercent = clamp(Number(state.settings.zoomPercent || defaults.zoomPercent), 50, 300);
+  normalizeFrameTransformSettings();
   state.settings.playlistShuffle = Boolean(state.settings.playlistShuffle);
   if (!["off", "all", "one"].includes(state.settings.playlistRepeatMode)) {
     state.settings.playlistRepeatMode = "off";
@@ -3683,6 +4613,7 @@ function applyPlaybackPreferences() {
 
   applyAudioDelayProcessing();
   updatePlaylistModeButtons();
+  applyGpuEnhancementCompatibilityMode();
 }
 
 function normalizeShortcutBindings(rawBindings) {
@@ -3799,7 +4730,7 @@ function eventKeyToShortcutToken(rawKey) {
 }
 
 function getShortcutComboFromEvent(event) {
-  const keyToken = eventKeyToShortcutToken(event.key);
+  const keyToken = getShortcutTokenFromKeyboardEvent(event);
   if (!keyToken) {
     return "";
   }
@@ -3818,8 +4749,39 @@ function getShortcutComboFromEvent(event) {
   return [...modifiers, keyToken].join("+");
 }
 
+function getShortcutTokenFromKeyboardEvent(event) {
+  const code = String(event.code || "");
+  if (code.startsWith("Numpad")) {
+    return code;
+  }
+
+  return eventKeyToShortcutToken(event.key);
+}
+
 function getShortcutDefinition(actionId) {
   return SHORTCUT_DEFINITIONS.find((definition) => definition.id === actionId) || null;
+}
+
+function getShortcutGroupId(actionId) {
+  if (actionId.startsWith("frameMove") || actionId === "framePositionReset") {
+    return "frame-move";
+  }
+
+  if (actionId.startsWith("frame") || actionId === "frameSizeReset") {
+    return "frame-resize";
+  }
+
+  if (actionId === "nextFile" || actionId === "previousFile" || actionId === "nextSection" || actionId === "previousSection") {
+    return "navigation";
+  }
+
+  if (actionId === "audioDelayUp" || actionId === "audioDelayDown"
+    || actionId === "subtitleDelayUp" || actionId === "subtitleDelayDown"
+    || actionId === "abLoopToggle") {
+    return "timing";
+  }
+
+  return "playback";
 }
 
 function formatShortcutBindingLabel(binding) {
@@ -3827,7 +4789,9 @@ function formatShortcutBindingLabel(binding) {
     return "Unassigned";
   }
 
-  return binding.replace(/Plus/g, "+");
+  return binding
+    .replace(/Plus/g, "+")
+    .replace(/Numpad/g, "NumPad");
 }
 
 function findShortcutActionByBinding(binding) {
@@ -3850,32 +4814,62 @@ function renderShortcutBindingsEditor() {
 
   el.shortcutBindings.innerHTML = "";
 
-  SHORTCUT_DEFINITIONS.forEach((definition) => {
-    const row = document.createElement("div");
-    row.className = "shortcut-row";
+  const definitionsByGroup = SHORTCUT_DEFINITIONS.reduce((groups, definition) => {
+    const groupId = getShortcutGroupId(definition.id);
+    if (!groups[groupId]) {
+      groups[groupId] = [];
+    }
+    groups[groupId].push(definition);
+    return groups;
+  }, {});
 
-    const label = document.createElement("span");
-    label.className = "shortcut-name";
-    label.textContent = definition.label;
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn secondary shortcut-binding-btn";
-    button.dataset.shortcutAction = definition.id;
-
-    const isCapturing = state.shortcutCapture.actionId === definition.id;
-    button.textContent = isCapturing
-      ? "Press shortcut..."
-      : formatShortcutBindingLabel(state.settings.shortcuts[definition.id]);
-
-    if (isCapturing) {
-      row.classList.add("is-capturing");
-      button.classList.add("is-capturing");
+  SHORTCUT_GROUP_ORDER.forEach((groupId) => {
+    const definitions = definitionsByGroup[groupId] || [];
+    if (!definitions.length) {
+      return;
     }
 
-    row.appendChild(label);
-    row.appendChild(button);
-    el.shortcutBindings.appendChild(row);
+    const groupBlock = document.createElement("section");
+    groupBlock.className = "shortcut-group";
+
+    const heading = document.createElement("h4");
+    heading.className = "shortcut-group-title";
+    heading.textContent = SHORTCUT_GROUP_LABELS[groupId] || groupId;
+    groupBlock.appendChild(heading);
+
+    const grid = document.createElement("div");
+    grid.className = "shortcut-group-grid";
+
+    definitions.forEach((definition) => {
+      const row = document.createElement("div");
+      row.className = "shortcut-row";
+
+      const label = document.createElement("span");
+      label.className = "shortcut-name";
+      label.textContent = definition.label;
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn secondary shortcut-binding-btn";
+      button.dataset.shortcutAction = definition.id;
+
+      const isCapturing = state.shortcutCapture.actionId === definition.id;
+      button.textContent = isCapturing
+        ? "Press shortcut..."
+        : formatShortcutBindingLabel(state.settings.shortcuts[definition.id]);
+
+      if (isCapturing) {
+        row.classList.add("is-capturing");
+        button.classList.add("is-capturing");
+      }
+
+      row.appendChild(label);
+      row.appendChild(button);
+      grid.appendChild(row);
+    });
+
+    groupBlock.appendChild(grid);
+    el.shortcutBindings.appendChild(groupBlock);
   });
 }
 
@@ -4033,10 +5027,70 @@ function runShortcutAction(actionId) {
       toggleFullscreen();
       return true;
     case "nextFile":
+      if (state.settings.shortcutSectionNavigation && jumpToAdjacentSection(1, { announce: true })) {
+        return true;
+      }
       playNext();
       return true;
     case "previousFile":
+      if (state.settings.shortcutSectionNavigation && jumpToAdjacentSection(-1, { announce: true })) {
+        return true;
+      }
       playPrevious();
+      return true;
+    case "nextSection":
+      goToNextSection();
+      return true;
+    case "previousSection":
+      goToPreviousSection();
+      return true;
+    case "frameWidthIncrease":
+      adjustFrameScale(FRAME_RESIZE_STEP, 0);
+      return true;
+    case "frameWidthDecrease":
+      adjustFrameScale(-FRAME_RESIZE_STEP, 0);
+      return true;
+    case "frameHeightIncrease":
+      adjustFrameScale(0, FRAME_RESIZE_STEP);
+      return true;
+    case "frameHeightDecrease":
+      adjustFrameScale(0, -FRAME_RESIZE_STEP);
+      return true;
+    case "frameScaleDiagonalIncrease":
+      adjustFrameScale(FRAME_RESIZE_STEP, FRAME_RESIZE_STEP);
+      return true;
+    case "frameScaleDiagonalDecrease":
+      adjustFrameScale(-FRAME_RESIZE_STEP, -FRAME_RESIZE_STEP);
+      return true;
+    case "frameSizeReset":
+      resetFrameScale();
+      return true;
+    case "frameMoveLeft":
+      adjustFrameOffset(-getFrameMoveStepPx(), 0);
+      return true;
+    case "frameMoveRight":
+      adjustFrameOffset(getFrameMoveStepPx(), 0);
+      return true;
+    case "frameMoveUp":
+      adjustFrameOffset(0, -getFrameMoveStepPx());
+      return true;
+    case "frameMoveDown":
+      adjustFrameOffset(0, getFrameMoveStepPx());
+      return true;
+    case "frameMoveUpRight":
+      adjustFrameOffset(getFrameMoveStepPx(), -getFrameMoveStepPx());
+      return true;
+    case "frameMoveDownLeft":
+      adjustFrameOffset(-getFrameMoveStepPx(), getFrameMoveStepPx());
+      return true;
+    case "frameMoveUpLeft":
+      adjustFrameOffset(-getFrameMoveStepPx(), -getFrameMoveStepPx());
+      return true;
+    case "frameMoveDownRight":
+      adjustFrameOffset(getFrameMoveStepPx(), getFrameMoveStepPx());
+      return true;
+    case "framePositionReset":
+      resetFrameOffset();
       return true;
     case "abLoopToggle":
       toggleABLoop();
@@ -4053,6 +5107,15 @@ function syncSettingsUI() {
   el.rememberPosition.checked = Boolean(state.settings.rememberPosition);
   el.autoplayNext.checked = Boolean(state.settings.autoplayNext);
   el.enableShortcuts.checked = Boolean(state.settings.enableShortcuts);
+  if (el.preferGpuEnhancementNormalMode) {
+    el.preferGpuEnhancementNormalMode.checked = state.settings.preferGpuEnhancementNormalMode !== false;
+  }
+  if (el.shortcutSectionNavigation) {
+    el.shortcutSectionNavigation.checked = Boolean(state.settings.shortcutSectionNavigation);
+  }
+  if (el.enforceFrameConstraints) {
+    el.enforceFrameConstraints.checked = state.settings.enforceFrameConstraints !== false;
+  }
   el.rememberVolume.checked = Boolean(state.settings.rememberVolume);
   el.rememberSpeed.checked = Boolean(state.settings.rememberSpeed);
   el.showSubtitlesByDefault.checked = Boolean(state.settings.showSubtitlesByDefault);
@@ -4069,6 +5132,13 @@ function saveSettingsFromUI() {
   state.settings.rememberPosition = el.rememberPosition.checked;
   state.settings.autoplayNext = el.autoplayNext.checked;
   state.settings.enableShortcuts = el.enableShortcuts.checked;
+  state.settings.preferGpuEnhancementNormalMode = el.preferGpuEnhancementNormalMode
+    ? el.preferGpuEnhancementNormalMode.checked
+    : true;
+  state.settings.shortcutSectionNavigation = Boolean(el.shortcutSectionNavigation?.checked);
+  state.settings.enforceFrameConstraints = el.enforceFrameConstraints
+    ? el.enforceFrameConstraints.checked
+    : true;
   state.settings.rememberVolume = el.rememberVolume.checked;
   state.settings.rememberSpeed = el.rememberSpeed.checked;
   state.settings.showSubtitlesByDefault = el.showSubtitlesByDefault.checked;
@@ -4084,6 +5154,7 @@ function saveSettingsFromUI() {
     state.settings.zoomPercent = clamp(Number(el.zoomSelect.value), 50, 300);
   }
 
+  normalizeFrameTransformSettings();
   state.settings.shortcuts = normalizeShortcutBindings(state.settings.shortcuts);
   saveSettings();
   applyTheme(state.settings.theme);
@@ -4907,6 +5978,7 @@ function registerServiceWorker() {
 function setupFullscreenOrientationHandling() {
   document.addEventListener("fullscreenchange", async () => {
     const isFullscreen = Boolean(document.fullscreenElement);
+    applyGpuEnhancementCompatibilityMode();
     if (!isFullscreen) {
       try {
         if (screen.orientation?.unlock) {
@@ -4946,7 +6018,17 @@ function setupTouchGestures() {
   shell.addEventListener("pointermove", onGestureMove, { passive: true });
   shell.addEventListener("pointerup", onGestureEnd, { passive: true });
   shell.addEventListener("pointercancel", onGestureEnd, { passive: true });
-  shell.addEventListener("dblclick", () => toggleFullscreen());
+  shell.addEventListener("dblclick", (event) => {
+    const target = event.target;
+    if (target instanceof Element) {
+      const isControlInteraction = Boolean(target.closest(".plyr__controls, .plyr__menu, button, select, input, label, .dock-btn"));
+      if (isControlInteraction) {
+        return;
+      }
+    }
+
+    toggleFullscreen();
+  });
 }
 
 function onGestureStart(event) {
