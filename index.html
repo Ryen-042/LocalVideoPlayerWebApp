@@ -7,7 +7,7 @@
   <meta name="description" content="Offline local video player web app" />
   <link rel="stylesheet" href="./vendor/plyr/plyr.css?v=1" />
   <link rel="stylesheet" href="./vendor/fontawesome/css/all.min.css?v=1" />
-  <link rel="stylesheet" href="./styles.css?v=20260419d" />
+  <link rel="stylesheet" href="./styles.css?v=20260419f" />
 </head>
 <body>
   <header class="topbar">
@@ -78,6 +78,7 @@
               <option value="zoom-1">Zoom 1</option>
               <option value="zoom-2">Zoom 2</option>
               <option value="touch-outside">Touch Window From Outside</option>
+              <option value="custom" disabled>Custom (keyboard)</option>
             </select>
           </label>
           <label class="track-select" title="Video aspect ratio">
@@ -279,12 +280,12 @@
             <label class="inline-check"><input id="rememberPosition" type="checkbox" /> Remember playback position per file</label>
             <label class="inline-check"><input id="autoplayNext" type="checkbox" /> Auto-play next file in playlist</label>
             <label class="inline-check"><input id="enableShortcuts" type="checkbox" /> Enable keyboard shortcuts</label>
-            <label class="inline-check"><input id="preferGpuEnhancementNormalMode" type="checkbox" /> Prefer normal-mode GPU video enhancement compatibility</label>
+            <label class="inline-check"><input id="preferGpuEnhancementNormalMode" type="checkbox" /> Prefer GPU video enhancement compatibility</label>
             <label class="inline-check"><input id="rememberVolume" type="checkbox" /> Remember volume</label>
             <label class="inline-check"><input id="rememberSpeed" type="checkbox" /> Remember speed</label>
             <label class="inline-check"><input id="showSubtitlesByDefault" type="checkbox" /> Show subtitles by default</label>
           </div>
-          <p class="muted small">Compatibility mode minimizes compositor transforms in normal mode when frame zoom/offset are at defaults. Driver/browser limitations may still apply.</p>
+          <p class="muted small">Compatibility mode minimizes compositor transforms only when frame presentation remains at default settings. Driver/browser limitations may still apply.</p>
 
           <label>
             Theme
@@ -343,6 +344,6 @@
     </form>
   </dialog>
 
-  <script src="./boot.js?v=20260419d"></script>
+  <script src="./boot.js?v=20260419h"></script>
 </body>
 </html>

@@ -1,10 +1,10 @@
-const CACHE_NAME = "local-video-player-shell-v15";
+const CACHE_NAME = "local-video-player-shell-v19";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=20260417c",
-  "./boot.js?v=20260417b",
-  "./app.js?v=20260417b",
+  "./styles.css?v=20260419f",
+  "./boot.js?v=20260419h",
+  "./app.js?v=20260419h",
   "./manifest.webmanifest",
   "./vendor/fontawesome/css/all.min.css?v=1",
   "./vendor/fontawesome/webfonts/fa-solid-900.woff2",

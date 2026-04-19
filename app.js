@@ -245,6 +245,10 @@ const state = {
   floatingMode: {
     supported: false,
     active: false
+  },
+  frameShortcutMode: {
+    active: false,
+    lastPresetMode: defaults.frameMode
   }
 };
 
@@ -924,7 +928,16 @@ function onFrameModeChanged() {
     return;
   }
 
-  state.settings.frameMode = el.frameModeSelect.value;
+  const selectedMode = el.frameModeSelect.value;
+  if (selectedMode === "custom") {
+    el.frameModeSelect.value = state.frameShortcutMode.active
+      ? "custom"
+      : normalizeFrameModeValue(state.settings.frameMode);
+    return;
+  }
+
+  commitFrameModePresetSelection(selectedMode);
+  blurSelectIfActive(el.frameModeSelect);
   applyVideoPresentation();
   saveSettings();
   setStatus(`Frame mode: ${humanizeFrameMode(state.settings.frameMode)}`);
@@ -936,6 +949,7 @@ function onAspectRatioChanged() {
   }
 
   state.settings.aspectRatio = normalizeAspectRatioSelection(el.aspectRatioSelect.value);
+  blurSelectIfActive(el.aspectRatioSelect);
   applyVideoPresentation();
   saveSettings();
   setStatus(`Aspect ratio: ${humanizeAspectRatio(state.settings.aspectRatio)}`);
@@ -947,6 +961,7 @@ function onZoomChanged() {
   }
 
   state.settings.zoomPercent = clamp(Number(el.zoomSelect.value), 50, 300);
+  blurSelectIfActive(el.zoomSelect);
   applyVideoPresentation();
   saveSettings();
   setStatus(`Zoom: ${state.settings.zoomPercent}%`);
@@ -955,7 +970,7 @@ function onZoomChanged() {
 function cycleFrameMode() {
   const current = FRAME_MODE_SEQUENCE.indexOf(state.settings.frameMode);
   const nextIndex = (Math.max(current, 0) + 1) % FRAME_MODE_SEQUENCE.length;
-  state.settings.frameMode = FRAME_MODE_SEQUENCE[nextIndex];
+  commitFrameModePresetSelection(FRAME_MODE_SEQUENCE[nextIndex]);
   applyVideoPresentation();
   saveSettings();
   setStatus(`Frame mode: ${humanizeFrameMode(state.settings.frameMode)}`);
@@ -979,6 +994,71 @@ function stepZoom(direction) {
   applyVideoPresentation();
   saveSettings();
   setStatus(`Zoom: ${state.settings.zoomPercent}%`);
+}
+
+function blurSelectIfActive(selectElement) {
+  if (document.activeElement === selectElement && typeof selectElement?.blur === "function") {
+    selectElement.blur();
+  }
+}
+
+function commitFrameModePresetSelection(modeValue) {
+  const normalizedMode = normalizeFrameModeValue(modeValue);
+  if (state.frameShortcutMode.active || !areFrameTransformsAtDefaults()) {
+    resetFrameTransformValuesToDefaults();
+  }
+
+  state.settings.frameMode = normalizedMode;
+  state.frameShortcutMode.lastPresetMode = normalizedMode;
+  state.frameShortcutMode.active = false;
+}
+
+function markFrameModeCustomOverrideFromShortcuts() {
+  if (!state.frameShortcutMode.active) {
+    state.frameShortcutMode.lastPresetMode = normalizeFrameModeValue(state.settings.frameMode);
+  }
+
+  state.frameShortcutMode.active = true;
+}
+
+function restoreFrameModePresetAfterSizeReset() {
+  const restoredMode = normalizeFrameModeValue(state.frameShortcutMode.lastPresetMode || defaults.frameMode);
+  state.settings.frameMode = restoredMode;
+  state.frameShortcutMode.lastPresetMode = restoredMode;
+  state.frameShortcutMode.active = false;
+}
+
+function areFrameTransformsAtDefaults() {
+  const frameScaleX = Number(state.settings.frameScaleX || defaults.frameScaleX);
+  const frameScaleY = Number(state.settings.frameScaleY || defaults.frameScaleY);
+  const frameOffsetXPx = Number(state.settings.frameOffsetXPx || defaults.frameOffsetXPx);
+  const frameOffsetYPx = Number(state.settings.frameOffsetYPx || defaults.frameOffsetYPx);
+
+  return Math.abs(frameScaleX - defaults.frameScaleX) < 0.001
+    && Math.abs(frameScaleY - defaults.frameScaleY) < 0.001
+    && Math.abs(frameOffsetXPx - defaults.frameOffsetXPx) < 0.01
+    && Math.abs(frameOffsetYPx - defaults.frameOffsetYPx) < 0.01;
+}
+
+function resetFrameTransformValuesToDefaults() {
+  state.settings.frameScaleX = defaults.frameScaleX;
+  state.settings.frameScaleY = defaults.frameScaleY;
+  state.settings.frameOffsetXPx = defaults.frameOffsetXPx;
+  state.settings.frameOffsetYPx = defaults.frameOffsetYPx;
+}
+
+function resolveShellAspectRatio(aspectRatioSelection) {
+  if (aspectRatioSelection !== "auto" && aspectRatioSelection !== "sar") {
+    return normalizeAspectRatioValue(aspectRatioSelection);
+  }
+
+  const intrinsicWidth = Number(el.video?.videoWidth || 0);
+  const intrinsicHeight = Number(el.video?.videoHeight || 0);
+  if (!Number.isFinite(intrinsicWidth) || !Number.isFinite(intrinsicHeight) || intrinsicWidth <= 0 || intrinsicHeight <= 0) {
+    return "";
+  }
+
+  return `${intrinsicWidth} / ${intrinsicHeight}`;
 }
 
 function applyVideoPresentation() {
@@ -1008,6 +1088,13 @@ function applyVideoPresentation() {
     el.videoShell.style.setProperty("--video-scale-y", String(frameScaleY));
     el.videoShell.style.setProperty("--video-offset-x", `${frameOffsetXPx}px`);
     el.videoShell.style.setProperty("--video-offset-y", `${frameOffsetYPx}px`);
+
+    const shellAspectRatio = resolveShellAspectRatio(aspectRatio);
+    if (shellAspectRatio) {
+      el.videoShell.style.setProperty("--shell-ratio", shellAspectRatio);
+    } else {
+      el.videoShell.style.removeProperty("--shell-ratio");
+    }
   }
 
   el.video.style.objectFit = frameModePreset.objectFit;
@@ -1034,7 +1121,9 @@ function applyVideoPresentation() {
   }
 
   if (el.frameModeSelect) {
-    el.frameModeSelect.value = frameMode;
+    const frameModeSelectValue = state.frameShortcutMode.active ? "custom" : frameMode;
+    const hasOption = Boolean(el.frameModeSelect.querySelector(`option[value="${frameModeSelectValue}"]`));
+    el.frameModeSelect.value = hasOption ? frameModeSelectValue : frameMode;
   }
 
   if (el.aspectRatioSelect) {
@@ -1048,22 +1137,50 @@ function applyVideoPresentation() {
   applyGpuEnhancementCompatibilityMode();
 }
 
+function shouldUseGpuEnhancementCompatibilityPath() {
+  const preferCompatibility = state.settings.preferGpuEnhancementNormalMode !== false;
+  const isFloating = document.pictureInPictureElement === el.video || state.floatingMode.active;
+  return preferCompatibility
+    && !isFloating
+    && isDefaultFramePresentationForCompatibility();
+}
+
+function isDefaultFramePresentationForCompatibility() {
+  const frameMode = normalizeFrameModeValue(state.settings.frameMode);
+  const zoomPercent = clamp(Number(state.settings.zoomPercent || defaults.zoomPercent), 50, 300);
+  const frameScaleX = Number(state.settings.frameScaleX || defaults.frameScaleX);
+  const frameScaleY = Number(state.settings.frameScaleY || defaults.frameScaleY);
+  const frameOffsetXPx = Number(state.settings.frameOffsetXPx || defaults.frameOffsetXPx);
+  const frameOffsetYPx = Number(state.settings.frameOffsetYPx || defaults.frameOffsetYPx);
+
+  return frameMode === defaults.frameMode
+    && zoomPercent === defaults.zoomPercent
+    && Math.abs(frameScaleX - defaults.frameScaleX) < 0.001
+    && Math.abs(frameScaleY - defaults.frameScaleY) < 0.001
+    && Math.abs(frameOffsetXPx - defaults.frameOffsetXPx) < 0.01
+    && Math.abs(frameOffsetYPx - defaults.frameOffsetYPx) < 0.01;
+}
+
 function applyGpuEnhancementCompatibilityMode() {
   if (!el.videoShell) {
     return;
   }
 
-  const preferCompatibility = state.settings.preferGpuEnhancementNormalMode !== false;
-  const isFloating = document.pictureInPictureElement === el.video || state.floatingMode.active;
-  const isFullscreen = Boolean(document.fullscreenElement);
-  const shouldUseNativePath = preferCompatibility && !isFloating && !isFullscreen;
+  const shouldUseNativePath = shouldUseGpuEnhancementCompatibilityPath();
 
   el.videoShell.classList.toggle("is-gpu-enhancement-friendly", shouldUseNativePath);
 
   if (shouldUseNativePath) {
     el.video.style.willChange = "auto";
-  } else {
-    el.video.style.removeProperty("will-change");
+    teardownSeekThumbnailSource();
+    return;
+  }
+
+  el.video.style.removeProperty("will-change");
+
+  const currentFile = state.playlist[state.currentIndex];
+  if (!state.hoverPreviewVideo && currentFile && !isAudioLikeFile(currentFile) && state.currentObjectUrl) {
+    prepareSeekThumbnailSource(currentFile);
   }
 }
 
@@ -1124,6 +1241,7 @@ function queueFrameTransformSave() {
 
 function adjustFrameScale(deltaX, deltaY) {
   normalizeFrameTransformSettings();
+  markFrameModeCustomOverrideFromShortcuts();
 
   state.settings.frameScaleX = Number((state.settings.frameScaleX + deltaX).toFixed(3));
   state.settings.frameScaleY = Number((state.settings.frameScaleY + deltaY).toFixed(3));
@@ -1134,6 +1252,7 @@ function adjustFrameScale(deltaX, deltaY) {
 
 function adjustFrameOffset(deltaX, deltaY) {
   normalizeFrameTransformSettings();
+  markFrameModeCustomOverrideFromShortcuts();
 
   state.settings.frameOffsetXPx = Number((state.settings.frameOffsetXPx + deltaX).toFixed(2));
   state.settings.frameOffsetYPx = Number((state.settings.frameOffsetYPx + deltaY).toFixed(2));
@@ -1145,6 +1264,10 @@ function adjustFrameOffset(deltaX, deltaY) {
 function resetFrameScale() {
   state.settings.frameScaleX = defaults.frameScaleX;
   state.settings.frameScaleY = defaults.frameScaleY;
+  if (state.frameShortcutMode.active && areFrameTransformsAtDefaults()) {
+    restoreFrameModePresetAfterSizeReset();
+  }
+
   applyVideoPresentation();
   queueFrameTransformSave();
   setStatus("Video frame size reset.");
@@ -1153,6 +1276,10 @@ function resetFrameScale() {
 function resetFrameOffset() {
   state.settings.frameOffsetXPx = defaults.frameOffsetXPx;
   state.settings.frameOffsetYPx = defaults.frameOffsetYPx;
+  if (state.frameShortcutMode.active && areFrameTransformsAtDefaults()) {
+    restoreFrameModePresetAfterSizeReset();
+  }
+
   applyVideoPresentation();
   queueFrameTransformSave();
   setStatus("Video frame position reset.");
@@ -4224,7 +4351,7 @@ function getSectionForTime(timeSeconds) {
 function prepareSeekThumbnailSource(file) {
   teardownSeekThumbnailSource();
 
-  if (!file || isAudioLikeFile(file) || !state.currentObjectUrl) {
+  if (!file || isAudioLikeFile(file) || !state.currentObjectUrl || shouldUseGpuEnhancementCompatibilityPath()) {
     return;
   }
 
@@ -4603,6 +4730,8 @@ function applyPlaybackPreferences() {
   el.audioDelayInput.value = String(state.settings.audioDelay);
   el.usePerVideoTiming.checked = Boolean(state.settings.usePerVideoTiming);
   state.settings.frameMode = normalizeFrameModeValue(state.settings.frameMode || defaults.frameMode);
+  state.frameShortcutMode.lastPresetMode = state.settings.frameMode;
+  state.frameShortcutMode.active = false;
   state.settings.aspectRatio = normalizeAspectRatioSelection(state.settings.aspectRatio || defaults.aspectRatio);
   state.settings.zoomPercent = clamp(Number(state.settings.zoomPercent || defaults.zoomPercent), 50, 300);
   normalizeFrameTransformSettings();
@@ -5145,7 +5274,10 @@ function saveSettingsFromUI() {
   state.settings.theme = el.themeSelect.value;
   state.settings.seekStep = clamp(Number(el.seekStep.value), 1, 60);
   if (el.frameModeSelect) {
-    state.settings.frameMode = normalizeFrameModeValue(el.frameModeSelect.value);
+    const selectedFrameMode = el.frameModeSelect.value;
+    state.settings.frameMode = selectedFrameMode === "custom"
+      ? normalizeFrameModeValue(state.frameShortcutMode.lastPresetMode || state.settings.frameMode)
+      : normalizeFrameModeValue(selectedFrameMode);
   }
   if (el.aspectRatioSelect) {
     state.settings.aspectRatio = normalizeAspectRatioSelection(el.aspectRatioSelect.value);

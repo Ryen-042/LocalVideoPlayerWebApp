@@ -38,6 +38,8 @@ Notes:
 
 - Availability depends on GPU model, driver version, and browser support.
 - RTX Video Enhancement is handled by NVIDIA/driver and is external to this app.
+- For best compatibility in this app, keep Settings > Global Preferences > Prefer GPU video enhancement compatibility enabled.
+- Compatibility mode minimizes compositor transforms only when frame presentation remains at default settings.
 
 ## Current Features
 
