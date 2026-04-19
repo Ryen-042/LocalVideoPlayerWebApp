@@ -8,9 +8,9 @@ It runs fully on the frontend (HTML, CSS, JavaScript) and plays media directly f
 
 ## Screenshots
 
-![Home Player UI](docs\screenshots\home-player-ui.png)
-![Settings Menu](docs\screenshots\settings-preferences-tab.png)
-![Fullscreen View](docs\screenshots\fullscreen-view.png)
+![Home Player UI](docs/screenshots/home-player-ui.png)
+![Settings Menu](docs/screenshots/settings-preferences-tab.png)
+![Fullscreen View](docs/screenshots/fullscreen-view.png)
 
 ## Why This Project Was Created
 
