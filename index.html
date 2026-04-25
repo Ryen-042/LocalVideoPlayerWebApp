@@ -7,7 +7,7 @@
   <meta name="description" content="Offline local video player web app" />
   <link rel="stylesheet" href="./vendor/plyr/plyr.css?v=1" />
   <link rel="stylesheet" href="./vendor/fontawesome/css/all.min.css?v=1" />
-  <link rel="stylesheet" href="./styles.css?v=20260419f" />
+  <link rel="stylesheet" href="./styles.css?v=20260425b" />
 </head>
 <body>
   <header class="topbar">
@@ -43,6 +43,7 @@
         <img id="audioCoverThumb" class="audio-cover-thumb hidden" alt="Embedded audio cover art" />
         <div id="subtitleOverlay" class="subtitle-overlay hidden" aria-hidden="true"></div>
         <div id="statusBanner" class="status-banner hidden"></div>
+        <div id="timeInfoOverlay" class="time-info-overlay hidden"></div>
       </div>
 
       <section class="player-dock card" aria-label="Quick controls">
@@ -109,6 +110,7 @@
           </label>
         </div>
       </section>
+
     </section>
 
     <aside id="sidePanel" class="side-panel" aria-label="Library panel">
@@ -284,6 +286,7 @@
             <label class="inline-check"><input id="rememberVolume" type="checkbox" /> Remember volume</label>
             <label class="inline-check"><input id="rememberSpeed" type="checkbox" /> Remember speed</label>
             <label class="inline-check"><input id="showSubtitlesByDefault" type="checkbox" /> Show subtitles by default</label>
+            <label class="inline-check"><input id="showFullscreenFilenameOverlay" type="checkbox" /> Show filename overlay when entering fullscreen</label>
           </div>
           <p class="muted small">Compatibility mode minimizes compositor transforms only when frame presentation remains at default settings. Driver/browser limitations may still apply.</p>
 
@@ -299,6 +302,28 @@
           <label>
             Seek Step (sec)
             <input id="seekStep" type="number" min="1" max="60" step="1" value="5" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Overlay Information</h3>
+          <p class="muted small">Choose which events should show in-video info overlays.</p>
+
+          <div class="settings-toggle-list">
+            <label class="inline-check"><input id="overlayShowVolume" type="checkbox" /> Show volume changes</label>
+            <label class="inline-check"><input id="overlayShowZoom" type="checkbox" /> Show zoom changes</label>
+            <label class="inline-check"><input id="overlayShowFileLoad" type="checkbox" /> Show newly loaded file name</label>
+            <label class="inline-check"><input id="overlayShowSection" type="checkbox" /> Show section/chapter jumps</label>
+            <label class="inline-check"><input id="overlayShowPlaybackSpeed" type="checkbox" /> Show playback speed changes</label>
+            <label class="inline-check"><input id="overlayShowTrackChanges" type="checkbox" /> Show audio/subtitle track changes</label>
+            <label class="inline-check"><input id="overlayShowFrameMode" type="checkbox" /> Show frame mode changes</label>
+            <label class="inline-check"><input id="overlayShowAspectRatio" type="checkbox" /> Show aspect ratio changes</label>
+            <label class="inline-check"><input id="overlayShowGeneralMessages" type="checkbox" /> Show general notices and warnings</label>
+          </div>
+
+          <label>
+            Overlay duration (sec)
+            <input id="overlayDurationSeconds" type="number" min="0.5" max="10" step="0.1" value="4" />
           </label>
         </section>
 
@@ -344,6 +369,6 @@
     </form>
   </dialog>
 
-  <script src="./boot.js?v=20260419h"></script>
+  <script src="./boot.js?v=20260425b"></script>
 </body>
 </html>

@@ -224,11 +224,27 @@ body::before {
   --video-scale-y: 1;
   --video-offset-x: 0px;
   --video-offset-y: 0px;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
 }
 
 .video-shell.is-gpu-enhancement-friendly .plyr__video-wrapper {
   filter: none !important;
   transform: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+.video-shell.is-gpu-enhancement-friendly > .plyr,
+.video-shell.is-gpu-enhancement-friendly .plyr,
+.video-shell.is-gpu-enhancement-friendly .plyr--video {
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+.video-shell.is-gpu-enhancement-friendly .plyr__controls {
+  backdrop-filter: none !important;
 }
 
 .video-shell.is-floating-active::after {
@@ -297,6 +313,22 @@ body::before {
   color: #f7f0ff;
   padding: 0.35rem 0.55rem;
   font-size: 0.78rem;
+  z-index: 5;
+}
+
+.time-info-overlay {
+  position: absolute;
+  top: 0.58rem;
+  right: 0.58rem;
+  max-width: min(80%, 620px);
+  border-radius: 7px;
+  border: 1px solid var(--surface-edge);
+  background: rgba(16, 8, 28, 0.92);
+  color: #f7f0ff;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
   z-index: 5;
 }
 
@@ -658,7 +690,20 @@ body::before {
   align-items: center;
   gap: 0.12rem;
   margin-right: 0.14rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.plyr__controls .plyr__custom-group.hidden {
+  display: none;
+}
+
+.plyr__controls .plyr__custom-group.is-overflow.hidden,
+.plyr__controls .plyr__custom-group.is-overflow.hidden .plyr__overflow-toggle {
+  display: none !important;
+}
+
+.plyr__controls .plyr__custom-group[hidden] {
+  display: none !important;
 }
 
 .plyr__controls .plyr__custom-btn {
@@ -700,11 +745,50 @@ body::before {
 
 .plyr__controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.18rem;
-  row-gap: 0.28rem;
+  row-gap: 0;
   padding: 0.35rem 0.38rem;
+  overflow: visible;
+}
+
+.plyr__controls .plyr__custom-group.is-overflow {
+  position: relative;
+  margin-right: 0.2rem;
+}
+
+.plyr__controls .plyr__overflow-toggle {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--surface-edge) 40%);
+}
+
+.plyr__controls .plyr__overflow-toggle[aria-expanded="true"] {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 86%, white 14%), color-mix(in srgb, var(--accent-2) 84%, black 16%));
+  color: #18062e;
+}
+
+.plyr__controls .plyr__custom-overflow-menu {
+  position: absolute;
+  left: auto;
+  right: 0;
+  bottom: calc(100% + 8px);
+  transform: translateX(var(--overflow-shift-x, 0px));
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.3rem;
+  min-width: max-content;
+  max-width: min(74vw, 340px);
+  padding: 0.34rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--surface-edge) 74%, black 26%);
+  background: rgba(16, 8, 30, 0.96);
+  box-shadow: 0 12px 30px rgba(7, 2, 18, 0.55);
+  backdrop-filter: blur(10px) saturate(120%);
+  z-index: 10;
+}
+
+.plyr__controls .plyr__custom-overflow-menu.hidden {
+  display: none;
 }
 
 .plyr__controls .plyr__progress__container {
@@ -1199,6 +1283,18 @@ select:focus-visible {
   .shortcut-group-grid {
     grid-template-columns: 1fr;
   }
+
+  .plyr__controls .plyr__custom-btn.icon-only {
+    width: 1.62rem;
+    height: 1.62rem;
+    min-width: 1.62rem;
+    font-size: 0.8rem;
+  }
+
+  .plyr__controls .plyr__custom-overflow-menu {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: min(84vw, 300px);
+  }
 }
 
 @media (max-width: 560px) {
@@ -1216,8 +1312,18 @@ select:focus-visible {
     justify-content: center;
   }
 
+  .plyr__controls .plyr__custom-overflow-menu {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-width: min(90vw, 252px);
+  }
+
   .recent-batch-actions {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* Hide Plyr's built-in settings menu since we use custom overflow controls */
+.plyr__controls [data-plyr="settings"] {
+  display: none !important;
 }

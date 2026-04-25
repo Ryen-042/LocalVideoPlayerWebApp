@@ -24,7 +24,7 @@
       .catch(() => {
         // App will still run without Plyr; custom controls remain available.
       })
-      .finally(() => loadScript("./app.js?v=20260419h", true));
+      .finally(() => loadScript("./app.js?v=20260425b", true));
     return;
   }
 
@@ -38,5 +38,5 @@
     .catch(() => {
       // App will still run without Plyr in file mode fallback.
     })
-    .finally(() => loadScript("./app.js?v=20260419h", false));
+    .finally(() => loadScript("./app.js?v=20260425b", false));
 })();

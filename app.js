@@ -23,6 +23,7 @@ const SHORTCUT_DEFINITIONS = [
   { id: "subtitleDelayDown", label: "Subtitle Delay -", defaultBinding: "," },
   { id: "muteToggle", label: "Mute", defaultBinding: "M" },
   { id: "fullscreenToggle", label: "Fullscreen", defaultBinding: "F" },
+  { id: "timeOverlayToggle", label: "Time Overlay Toggle", defaultBinding: "T" },
   { id: "nextFile", label: "Next File", defaultBinding: "N" },
   { id: "previousFile", label: "Previous File", defaultBinding: "P" },
   { id: "nextSection", label: "Next Section", defaultBinding: "PageDown" },
@@ -73,6 +74,7 @@ const SHORTCUT_NO_REPEAT_ACTIONS = new Set([
   "playPause",
   "muteToggle",
   "fullscreenToggle",
+  "timeOverlayToggle",
   "nextFile",
   "previousFile",
   "nextSection",
@@ -89,6 +91,18 @@ const defaults = {
   rememberSpeed: true,
   showSubtitlesByDefault: true,
   preferGpuEnhancementNormalMode: true,
+  showFullscreenFilenameOverlay: true,
+  overlayShowVolume: true,
+  overlayShowZoom: true,
+  overlayShowFileLoad: true,
+  overlayShowSection: true,
+  overlayShowPlaybackSpeed: true,
+  overlayShowTrackChanges: true,
+  overlayShowFrameMode: true,
+  overlayShowAspectRatio: true,
+  overlayShowGeneralMessages: true,
+  persistentTimeOverlay: false,
+  overlayDurationMs: 4000,
   shortcutSectionNavigation: false,
   enforceFrameConstraints: true,
   theme: "auto",
@@ -146,6 +160,8 @@ const SEEK_PREVIEW_THUMB_WIDTH = 176;
 const SEEK_PREVIEW_THUMB_HEIGHT = 100;
 const SEEK_PREVIEW_SEEK_TIMEOUT_MS = 450;
 const AUDIO_DELAY_MAX_SECONDS = 5;
+const OVERLAY_DURATION_MIN_MS = 500;
+const OVERLAY_DURATION_MAX_MS = 10000;
 const FRAME_RESIZE_STEP = 0.04;
 const FRAME_MIN_SCALE_CONSTRAINED = 0.5;
 const FRAME_MAX_SCALE_CONSTRAINED = 3;
@@ -183,6 +199,18 @@ const state = {
   },
   player: null,
   plyrCustomButtons: {},
+  plyrOverflow: {
+    controlsRoot: null,
+    overflowGroup: null,
+    menu: null,
+    toggle: null,
+    entries: [],
+    observer: null,
+    resizeHandler: null,
+    outsideClickHandler: null,
+    keydownHandler: null,
+    isMenuOpen: false
+  },
   playlist: [],
   currentIndex: -1,
   currentObjectUrl: null,
@@ -288,6 +316,7 @@ const el = {
   zoomSelect: document.getElementById("zoomSelect"),
   subtitleOverlay: document.getElementById("subtitleOverlay"),
   statusBanner: document.getElementById("statusBanner"),
+  timeInfoOverlay: document.getElementById("timeInfoOverlay"),
   setABeginBtn: document.getElementById("setABeginBtn"),
   setBEndBtn: document.getElementById("setBEndBtn"),
   toggleABLoopBtn: document.getElementById("toggleABLoopBtn"),
@@ -320,6 +349,17 @@ const el = {
   rememberVolume: document.getElementById("rememberVolume"),
   rememberSpeed: document.getElementById("rememberSpeed"),
   showSubtitlesByDefault: document.getElementById("showSubtitlesByDefault"),
+  showFullscreenFilenameOverlay: document.getElementById("showFullscreenFilenameOverlay"),
+  overlayShowVolume: document.getElementById("overlayShowVolume"),
+  overlayShowZoom: document.getElementById("overlayShowZoom"),
+  overlayShowFileLoad: document.getElementById("overlayShowFileLoad"),
+  overlayShowSection: document.getElementById("overlayShowSection"),
+  overlayShowPlaybackSpeed: document.getElementById("overlayShowPlaybackSpeed"),
+  overlayShowTrackChanges: document.getElementById("overlayShowTrackChanges"),
+  overlayShowFrameMode: document.getElementById("overlayShowFrameMode"),
+  overlayShowAspectRatio: document.getElementById("overlayShowAspectRatio"),
+  overlayShowGeneralMessages: document.getElementById("overlayShowGeneralMessages"),
+  overlayDurationSeconds: document.getElementById("overlayDurationSeconds"),
   themeSelect: document.getElementById("themeSelect"),
   seekStep: document.getElementById("seekStep"),
   saveSettingsBtn: document.getElementById("saveSettingsBtn"),
@@ -368,6 +408,7 @@ function init() {
   syncFloatingModeUi();
   applySubtitleStyle();
   hideSubtitleOverlay();
+  ensureVideoOverlayPlacement();
   setupFullscreenOrientationHandling();
   renderRecentFiles();
   setupEventHandlers();
@@ -940,7 +981,7 @@ function onFrameModeChanged() {
   blurSelectIfActive(el.frameModeSelect);
   applyVideoPresentation();
   saveSettings();
-  setStatus(`Frame mode: ${humanizeFrameMode(state.settings.frameMode)}`);
+  setStatus(`Frame mode: ${humanizeFrameMode(state.settings.frameMode)}`, "frameMode");
 }
 
 function onAspectRatioChanged() {
@@ -952,7 +993,7 @@ function onAspectRatioChanged() {
   blurSelectIfActive(el.aspectRatioSelect);
   applyVideoPresentation();
   saveSettings();
-  setStatus(`Aspect ratio: ${humanizeAspectRatio(state.settings.aspectRatio)}`);
+  setStatus(`Aspect ratio: ${humanizeAspectRatio(state.settings.aspectRatio)}`, "aspectRatio");
 }
 
 function onZoomChanged() {
@@ -964,7 +1005,7 @@ function onZoomChanged() {
   blurSelectIfActive(el.zoomSelect);
   applyVideoPresentation();
   saveSettings();
-  setStatus(`Zoom: ${state.settings.zoomPercent}%`);
+  setStatus(`Zoom: ${state.settings.zoomPercent}%`, "zoom");
 }
 
 function cycleFrameMode() {
@@ -973,7 +1014,7 @@ function cycleFrameMode() {
   commitFrameModePresetSelection(FRAME_MODE_SEQUENCE[nextIndex]);
   applyVideoPresentation();
   saveSettings();
-  setStatus(`Frame mode: ${humanizeFrameMode(state.settings.frameMode)}`);
+  setStatus(`Frame mode: ${humanizeFrameMode(state.settings.frameMode)}`, "frameMode");
 }
 
 function cycleAspectRatio() {
@@ -982,7 +1023,7 @@ function cycleAspectRatio() {
   state.settings.aspectRatio = ASPECT_RATIO_SEQUENCE[nextIndex];
   applyVideoPresentation();
   saveSettings();
-  setStatus(`Aspect ratio: ${humanizeAspectRatio(state.settings.aspectRatio)}`);
+  setStatus(`Aspect ratio: ${humanizeAspectRatio(state.settings.aspectRatio)}`, "aspectRatio");
 }
 
 function stepZoom(direction) {
@@ -993,7 +1034,7 @@ function stepZoom(direction) {
   state.settings.zoomPercent = ZOOM_STEPS[nextIndex];
   applyVideoPresentation();
   saveSettings();
-  setStatus(`Zoom: ${state.settings.zoomPercent}%`);
+  setStatus(`Zoom: ${state.settings.zoomPercent}%`, "zoom");
 }
 
 function blurSelectIfActive(selectElement) {
@@ -1152,13 +1193,16 @@ function isDefaultFramePresentationForCompatibility() {
   const frameScaleY = Number(state.settings.frameScaleY || defaults.frameScaleY);
   const frameOffsetXPx = Number(state.settings.frameOffsetXPx || defaults.frameOffsetXPx);
   const frameOffsetYPx = Number(state.settings.frameOffsetYPx || defaults.frameOffsetYPx);
+  const frameModePreset = resolveFrameModePreset(frameMode);
 
-  return frameMode === defaults.frameMode
-    && zoomPercent === defaults.zoomPercent
-    && Math.abs(frameScaleX - defaults.frameScaleX) < 0.001
-    && Math.abs(frameScaleY - defaults.frameScaleY) < 0.001
-    && Math.abs(frameOffsetXPx - defaults.frameOffsetXPx) < 0.01
-    && Math.abs(frameOffsetYPx - defaults.frameOffsetYPx) < 0.01;
+  const usesScaleTransform = Math.abs(frameModePreset.zoomMultiplier - 1) > 0.001
+    || Math.abs(zoomPercent - defaults.zoomPercent) > 0.001;
+  const hasManualTransform = Math.abs(frameScaleX - defaults.frameScaleX) >= 0.001
+    || Math.abs(frameScaleY - defaults.frameScaleY) >= 0.001
+    || Math.abs(frameOffsetXPx - defaults.frameOffsetXPx) >= 0.01
+    || Math.abs(frameOffsetYPx - defaults.frameOffsetYPx) >= 0.01;
+
+  return !usesScaleTransform && !hasManualTransform;
 }
 
 function applyGpuEnhancementCompatibilityMode() {
@@ -1169,6 +1213,7 @@ function applyGpuEnhancementCompatibilityMode() {
   const shouldUseNativePath = shouldUseGpuEnhancementCompatibilityPath();
 
   el.videoShell.classList.toggle("is-gpu-enhancement-friendly", shouldUseNativePath);
+  el.video.style.transform = shouldUseNativePath ? "none" : "";
 
   if (shouldUseNativePath) {
     el.video.style.willChange = "auto";
@@ -1579,6 +1624,7 @@ function playAtIndex(index) {
   void resolveContainerSectionsForFile(file);
   scheduleSectionRefresh();
   startSectionPolling();
+  setStatus(`Now playing: ${file.name}`, "fileLoad");
 
   const storedPosition = state.positions[getFileFingerprint(file)] || 0;
   if (state.settings.rememberPosition && storedPosition > 0) {
@@ -1685,6 +1731,7 @@ function onSeekInput() {
 function onVolumeInput() {
   el.video.volume = Number(el.volumeInput.value);
   persistVolumeSetting();
+  setStatus(`Volume: ${Math.round(el.video.volume * 100)}%`, "volume");
 }
 
 function onSpeedChange() {
@@ -1808,6 +1855,8 @@ function updateTimeUi() {
   } else {
     el.seekInput.value = "0";
   }
+
+  updatePersistentTimeOverlay();
 }
 
 function scheduleSectionRefresh() {
@@ -2584,7 +2633,7 @@ function jumpToSection(index, options = {}) {
 
   el.video.currentTime = section.start;
   if (announce) {
-    setStatus(`Section ${index + 1}: ${section.title}`);
+    setStatus(`Section ${index + 1}: ${section.title}`, "section");
   }
   syncSectionNavigationState();
 }
@@ -3832,6 +3881,7 @@ function setVideoVolume(nextVolume) {
     el.volumeInput.value = String(el.video.volume);
   }
   persistVolumeSetting();
+  setStatus(`Volume: ${Math.round(el.video.volume * 100)}%`, "volume");
 }
 
 function adjustPlaybackSpeed(direction) {
@@ -3863,7 +3913,7 @@ function adjustPlaybackSpeed(direction) {
   }
 
   persistSpeedSetting();
-  setStatus(`Playback speed: ${nextRate.toFixed(2)}x`);
+  setStatus(`Playback speed: ${nextRate.toFixed(2)}x`, "playbackSpeed");
 }
 
 function nudgePlayback(delta) {
@@ -3880,13 +3930,75 @@ function syncPlyrCustomButtonState() {
   state.plyrCustomButtons.loop.classList.toggle("is-active", isActive);
 }
 
-function setStatus(message) {
+function shouldDisplayOverlayForCategory(category = "general") {
+  switch (category) {
+    case "volume":
+      return state.settings.overlayShowVolume !== false;
+    case "zoom":
+      return state.settings.overlayShowZoom !== false;
+    case "fileLoad":
+      return state.settings.overlayShowFileLoad !== false;
+    case "section":
+      return state.settings.overlayShowSection !== false;
+    case "playbackSpeed":
+      return state.settings.overlayShowPlaybackSpeed !== false;
+    case "trackChange":
+      return state.settings.overlayShowTrackChanges !== false;
+    case "frameMode":
+      return state.settings.overlayShowFrameMode !== false;
+    case "aspectRatio":
+      return state.settings.overlayShowAspectRatio !== false;
+    case "fullscreenFilename":
+      return state.settings.showFullscreenFilenameOverlay !== false;
+    case "general":
+    default:
+      return state.settings.overlayShowGeneralMessages !== false;
+  }
+}
+
+function setStatus(message, category = "general") {
+  if (!message || !el.statusBanner || !shouldDisplayOverlayForCategory(category)) {
+    return;
+  }
+
   el.statusBanner.textContent = message;
   el.statusBanner.classList.remove("hidden");
   clearTimeout(setStatus.timer);
+  const overlayDurationMs = clamp(
+    Number(state.settings.overlayDurationMs || defaults.overlayDurationMs),
+    OVERLAY_DURATION_MIN_MS,
+    OVERLAY_DURATION_MAX_MS
+  );
   setStatus.timer = setTimeout(() => {
     el.statusBanner.classList.add("hidden");
-  }, 4000);
+  }, overlayDurationMs);
+}
+
+function updatePersistentTimeOverlay() {
+  if (!el.timeInfoOverlay) {
+    return;
+  }
+
+  if (state.settings.persistentTimeOverlay !== true) {
+    el.timeInfoOverlay.classList.add("hidden");
+    el.timeInfoOverlay.textContent = "";
+    return;
+  }
+
+  const duration = Number.isFinite(el.video.duration) ? Math.max(0, el.video.duration) : 0;
+  const current = Number.isFinite(el.video.currentTime) ? Math.max(0, el.video.currentTime) : 0;
+  const clampedCurrent = duration > 0 ? Math.min(current, duration) : current;
+  const remaining = duration > 0 ? Math.max(0, duration - clampedCurrent) : 0;
+
+  el.timeInfoOverlay.textContent = `${formatTime(clampedCurrent)} / ${formatTime(duration)} | Left ${formatTime(remaining)}`;
+  el.timeInfoOverlay.classList.remove("hidden");
+}
+
+function togglePersistentTimeOverlay() {
+  state.settings.persistentTimeOverlay = state.settings.persistentTimeOverlay !== true;
+  updatePersistentTimeOverlay();
+  saveSettings();
+  setStatus(state.settings.persistentTimeOverlay ? "Persistent time overlay enabled." : "Persistent time overlay disabled.");
 }
 
 function formatTime(seconds) {
@@ -4069,12 +4181,14 @@ function initializePlyr() {
     document.body.classList.add("has-plyr");
     state.player.on("ready", () => {
       ensureAudioCoverPlacement();
+      ensureVideoOverlayPlacement();
       injectPlyrCustomControls();
       syncPlyrCustomButtonState();
       setupProgressHoverPreview();
     });
     window.setTimeout(() => {
       ensureAudioCoverPlacement();
+      ensureVideoOverlayPlacement();
       injectPlyrCustomControls();
       syncPlyrCustomButtonState();
       setupProgressHoverPreview();
@@ -4100,7 +4214,8 @@ function injectPlyrCustomControls() {
     return group;
   };
 
-  const addButton = (group, iconClass, title, onClick) => {
+  const overflowEntries = [];
+  const addButton = (group, iconClass, title, onClick, priority = 100, key = "") => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "plyr__control plyr__custom-btn icon-only";
@@ -4109,43 +4224,274 @@ function injectPlyrCustomControls() {
     button.setAttribute("aria-label", title);
     button.addEventListener("click", onClick);
     group.appendChild(button);
+
+    if (key) {
+      button.dataset.customControlKey = key;
+      overflowEntries.push({ key, button, homeGroup: group, priority });
+    }
+
     return button;
   };
 
   const navGroup = createGroup("is-nav");
-  addButton(navGroup, "fa-solid fa-backward-step", "Previous file", playPrevious);
-  addButton(navGroup, "fa-solid fa-stop", "Stop playback", stopPlayback);
-  addButton(navGroup, "fa-solid fa-forward-step", "Next file", playNext);
+  addButton(navGroup, "fa-solid fa-backward-step", "Previous file", playPrevious, 10, "prev");
+  addButton(navGroup, "fa-solid fa-stop", "Stop playback", stopPlayback, 5, "stop");
+  addButton(navGroup, "fa-solid fa-forward-step", "Next file", playNext, 10, "next");
 
   const viewGroup = createGroup("is-view");
-  addButton(viewGroup, "fa-regular fa-object-group", "Cycle frame mode", cycleFrameMode);
-  addButton(viewGroup, "fa-solid fa-up-right-and-down-left-from-center", "Cycle aspect ratio", cycleAspectRatio);
-  addButton(viewGroup, "fa-solid fa-magnifying-glass-minus", "Zoom out", () => stepZoom(-1));
-  addButton(viewGroup, "fa-solid fa-magnifying-glass-plus", "Zoom in", () => stepZoom(1));
-  state.plyrCustomButtons.floating = addButton(viewGroup, "fa-solid fa-up-right-from-square", "Pop out (Floating mode)", toggleFloatingMode);
+  addButton(viewGroup, "fa-regular fa-object-group", "Cycle frame mode", cycleFrameMode, 55, "frameMode");
+  addButton(viewGroup, "fa-solid fa-up-right-and-down-left-from-center", "Cycle aspect ratio", cycleAspectRatio, 60, "aspectRatio");
+  addButton(viewGroup, "fa-solid fa-magnifying-glass-minus", "Zoom out", () => stepZoom(-1), 50, "zoomOut");
+  addButton(viewGroup, "fa-solid fa-magnifying-glass-plus", "Zoom in", () => stepZoom(1), 45, "zoomIn");
+  state.plyrCustomButtons.floating = addButton(viewGroup, "fa-solid fa-up-right-from-square", "Pop out (Floating mode)", toggleFloatingMode, 70, "floating");
 
   const trackGroup = createGroup("is-track");
-  addButton(trackGroup, "fa-solid fa-music", "Cycle audio track", cycleAudioTrack);
-  addButton(trackGroup, "fa-solid fa-closed-captioning", "Cycle subtitle track", cycleSubtitleTrack);
+  addButton(trackGroup, "fa-solid fa-music", "Cycle audio track", cycleAudioTrack, 65, "audioTrack");
+  addButton(trackGroup, "fa-solid fa-closed-captioning", "Cycle subtitle track", cycleSubtitleTrack, 35, "subtitleTrack");
 
   const timingGroup = createGroup("is-timing");
-  state.plyrCustomButtons.setA = addButton(timingGroup, "fa-solid fa-left-long", "Set A marker", setA);
-  state.plyrCustomButtons.setB = addButton(timingGroup, "fa-solid fa-right-long", "Set B marker", setB);
-  state.plyrCustomButtons.loop = addButton(timingGroup, "fa-solid fa-repeat", "Toggle A-B loop", toggleABLoop);
-  state.plyrCustomButtons.subMinus = addButton(timingGroup, "fa-solid fa-arrow-down", "Subtitle offset -0.1s", () => adjustSubtitleOffset(-0.1));
-  state.plyrCustomButtons.subPlus = addButton(timingGroup, "fa-solid fa-arrow-up", "Subtitle offset +0.1s", () => adjustSubtitleOffset(0.1));
-  state.plyrCustomButtons.prevSection = addButton(timingGroup, "fa-solid fa-backward-fast", "Go to previous section", goToPreviousSection);
-  state.plyrCustomButtons.nextSection = addButton(timingGroup, "fa-solid fa-forward-fast", "Go to next section", goToNextSection);
+  state.plyrCustomButtons.setA = addButton(timingGroup, "fa-solid fa-left-long", "Set A marker", setA, 30, "setA");
+  state.plyrCustomButtons.setB = addButton(timingGroup, "fa-solid fa-right-long", "Set B marker", setB, 30, "setB");
+  state.plyrCustomButtons.loop = addButton(timingGroup, "fa-solid fa-repeat", "Toggle A-B loop", toggleABLoop, 25, "loop");
+  state.plyrCustomButtons.subMinus = addButton(timingGroup, "fa-solid fa-arrow-down", "Subtitle offset -0.1s", () => adjustSubtitleOffset(-0.1), 40, "subtitleMinus");
+  state.plyrCustomButtons.subPlus = addButton(timingGroup, "fa-solid fa-arrow-up", "Subtitle offset +0.1s", () => adjustSubtitleOffset(0.1), 40, "subtitlePlus");
+  state.plyrCustomButtons.prevSection = addButton(timingGroup, "fa-solid fa-backward-fast", "Go to previous section", goToPreviousSection, 20, "previousSection");
+  state.plyrCustomButtons.nextSection = addButton(timingGroup, "fa-solid fa-forward-fast", "Go to next section", goToNextSection, 20, "nextSection");
 
   controlsRoot.insertBefore(timingGroup, controlsRoot.firstChild);
   controlsRoot.insertBefore(trackGroup, controlsRoot.firstChild);
   controlsRoot.insertBefore(viewGroup, controlsRoot.firstChild);
   controlsRoot.insertBefore(navGroup, controlsRoot.firstChild);
 
+  setupPlyrOverflowControls(controlsRoot, overflowEntries);
+
   renderSectionMarkers();
   syncSectionNavigationState();
   setupProgressHoverPreview();
   syncFloatingModeUi();
+}
+
+function setupPlyrOverflowControls(controlsRoot, entries) {
+  if (!controlsRoot || !Array.isArray(entries) || !entries.length) {
+    return;
+  }
+
+  teardownPlyrOverflowControls();
+
+  const overflowGroup = document.createElement("div");
+  overflowGroup.className = "plyr__custom-group is-overflow hidden";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "plyr__control plyr__custom-btn icon-only plyr__overflow-toggle";
+  toggle.innerHTML = '<i class="plyr-icon fa-solid fa-ellipsis" aria-hidden="true"></i>';
+  toggle.title = "More controls";
+  toggle.setAttribute("aria-label", "More controls");
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-haspopup", "true");
+
+  const menu = document.createElement("div");
+  menu.className = "plyr__custom-overflow-menu hidden";
+  menu.setAttribute("role", "menu");
+
+  overflowGroup.appendChild(toggle);
+  overflowGroup.appendChild(menu);
+
+  const progressContainer = controlsRoot.querySelector(".plyr__progress__container");
+  if (progressContainer?.parentElement === controlsRoot) {
+    controlsRoot.insertBefore(overflowGroup, progressContainer);
+  } else {
+    controlsRoot.appendChild(overflowGroup);
+  }
+
+  const positionMenuWithinViewport = () => {
+    if (!state.plyrOverflow.menu || state.plyrOverflow.menu.classList.contains("hidden")) {
+      return;
+    }
+
+    const menuRect = state.plyrOverflow.menu.getBoundingClientRect();
+    const viewportPadding = 8;
+    let shiftX = 0;
+
+    if (menuRect.left < viewportPadding) {
+      shiftX = viewportPadding - menuRect.left;
+    } else if (menuRect.right > window.innerWidth - viewportPadding) {
+      shiftX = (window.innerWidth - viewportPadding) - menuRect.right;
+    }
+
+    state.plyrOverflow.menu.style.setProperty("--overflow-shift-x", `${shiftX}px`);
+  };
+
+  const closeMenu = () => {
+    if (!state.plyrOverflow.menu || !state.plyrOverflow.toggle) {
+      return;
+    }
+
+    state.plyrOverflow.isMenuOpen = false;
+    state.plyrOverflow.menu.classList.add("hidden");
+    state.plyrOverflow.menu.style.removeProperty("--overflow-shift-x");
+    state.plyrOverflow.toggle.setAttribute("aria-expanded", "false");
+  };
+
+  const openMenu = () => {
+    if (!state.plyrOverflow.menu || !state.plyrOverflow.toggle || state.plyrOverflow.overflowGroup?.classList.contains("hidden")) {
+      return;
+    }
+
+    state.plyrOverflow.isMenuOpen = true;
+    state.plyrOverflow.menu.classList.remove("hidden");
+    state.plyrOverflow.toggle.setAttribute("aria-expanded", "true");
+    positionMenuWithinViewport();
+  };
+
+  const determineVisibleCount = (controlsWidth) => {
+    if (controlsWidth >= 1160) return entries.length;
+    if (controlsWidth >= 1000) return 12;
+    if (controlsWidth >= 860) return 10;
+    if (controlsWidth >= 740) return 8;
+    if (controlsWidth >= 620) return 6;
+    if (controlsWidth >= 500) return 4;
+    return 3;
+  };
+
+  const relayout = () => {
+    if (!state.plyrOverflow.controlsRoot || !state.plyrOverflow.menu) {
+      return;
+    }
+
+    const width = state.plyrOverflow.controlsRoot.clientWidth;
+    const sortedEntries = [...state.plyrOverflow.entries].sort((a, b) => a.priority - b.priority);
+    const visibleCount = clamp(determineVisibleCount(width), 0, sortedEntries.length);
+    const visibleKeys = new Set(sortedEntries.slice(0, visibleCount).map((entry) => entry.key));
+
+    sortedEntries.forEach((entry) => {
+      if (visibleKeys.has(entry.key)) {
+        if (entry.button.parentElement !== entry.homeGroup) {
+          entry.homeGroup.appendChild(entry.button);
+        }
+      } else if (entry.button.parentElement !== state.plyrOverflow.menu) {
+        state.plyrOverflow.menu.appendChild(entry.button);
+      }
+    });
+
+    const hasOverflowItems = Array.from(state.plyrOverflow.menu.children).some((child) => {
+      if (!(child instanceof HTMLElement)) {
+        return false;
+      }
+
+      if (child.hidden || child.classList.contains("hidden")) {
+        return false;
+      }
+
+      const computed = window.getComputedStyle(child);
+      return computed.display !== "none" && computed.visibility !== "hidden";
+    });
+    state.plyrOverflow.overflowGroup.classList.toggle("hidden", !hasOverflowItems);
+    state.plyrOverflow.toggle.hidden = !hasOverflowItems;
+    state.plyrOverflow.toggle.disabled = !hasOverflowItems;
+    state.plyrOverflow.toggle.setAttribute("aria-hidden", hasOverflowItems ? "false" : "true");
+    if (!hasOverflowItems) {
+      closeMenu();
+      return;
+    }
+
+    if (state.plyrOverflow.isMenuOpen) {
+      positionMenuWithinViewport();
+    }
+  };
+
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (state.plyrOverflow.isMenuOpen) {
+      closeMenu();
+      return;
+    }
+    openMenu();
+  });
+
+  const outsideClickHandler = (event) => {
+    if (!state.plyrOverflow.isMenuOpen || !state.plyrOverflow.overflowGroup) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof Node)) {
+      closeMenu();
+      return;
+    }
+
+    if (!state.plyrOverflow.overflowGroup.contains(target)) {
+      closeMenu();
+    }
+  };
+
+  const keydownHandler = (event) => {
+    if (event.key === "Escape") {
+      closeMenu();
+    }
+  };
+
+  const resizeHandler = () => {
+    relayout();
+    if (state.plyrOverflow.isMenuOpen) {
+      positionMenuWithinViewport();
+    }
+  };
+
+  document.addEventListener("pointerdown", outsideClickHandler, true);
+  window.addEventListener("resize", resizeHandler);
+  document.addEventListener("keydown", keydownHandler);
+
+  let observer = null;
+  if (typeof ResizeObserver === "function") {
+    observer = new ResizeObserver(() => {
+      relayout();
+    });
+    observer.observe(controlsRoot);
+  }
+
+  state.plyrOverflow.controlsRoot = controlsRoot;
+  state.plyrOverflow.overflowGroup = overflowGroup;
+  state.plyrOverflow.menu = menu;
+  state.plyrOverflow.toggle = toggle;
+  state.plyrOverflow.entries = entries;
+  state.plyrOverflow.observer = observer;
+  state.plyrOverflow.resizeHandler = resizeHandler;
+  state.plyrOverflow.outsideClickHandler = outsideClickHandler;
+  state.plyrOverflow.keydownHandler = keydownHandler;
+  state.plyrOverflow.isMenuOpen = false;
+
+  relayout();
+}
+
+function teardownPlyrOverflowControls() {
+  if (state.plyrOverflow.observer) {
+    state.plyrOverflow.observer.disconnect();
+  }
+
+  if (state.plyrOverflow.resizeHandler) {
+    window.removeEventListener("resize", state.plyrOverflow.resizeHandler);
+  }
+
+  if (state.plyrOverflow.outsideClickHandler) {
+    document.removeEventListener("pointerdown", state.plyrOverflow.outsideClickHandler, true);
+  }
+
+  if (state.plyrOverflow.keydownHandler) {
+    document.removeEventListener("keydown", state.plyrOverflow.keydownHandler);
+  }
+
+  state.plyrOverflow.controlsRoot = null;
+  state.plyrOverflow.overflowGroup = null;
+  state.plyrOverflow.menu = null;
+  state.plyrOverflow.toggle = null;
+  state.plyrOverflow.entries = [];
+  state.plyrOverflow.observer = null;
+  state.plyrOverflow.resizeHandler = null;
+  state.plyrOverflow.outsideClickHandler = null;
+  state.plyrOverflow.keydownHandler = null;
+  state.plyrOverflow.isMenuOpen = false;
 }
 
 function setupProgressHoverPreview() {
@@ -4327,6 +4673,31 @@ function ensureAudioCoverPlacement() {
 
   if (el.videoShell && el.audioCoverThumb.parentElement !== el.videoShell) {
     el.videoShell.appendChild(el.audioCoverThumb);
+  }
+}
+
+function ensureVideoOverlayPlacement() {
+  const overlayNodes = [el.subtitleOverlay, el.statusBanner, el.timeInfoOverlay].filter(Boolean);
+  if (!overlayNodes.length) {
+    return;
+  }
+
+  const plyrVideoWrapper = state.player?.elements?.container?.querySelector(".plyr__video-wrapper");
+  if (plyrVideoWrapper) {
+    overlayNodes.forEach((node) => {
+      if (node.parentElement !== plyrVideoWrapper) {
+        plyrVideoWrapper.appendChild(node);
+      }
+    });
+    return;
+  }
+
+  if (el.videoShell) {
+    overlayNodes.forEach((node) => {
+      if (node.parentElement !== el.videoShell) {
+        el.videoShell.appendChild(node);
+      }
+    });
   }
 }
 
@@ -4572,7 +4943,7 @@ async function seekPreviewVideoToTime(video, targetTime) {
 function cycleAudioTrack() {
   const audioTracks = el.video.audioTracks;
   if (!audioTracks || audioTracks.length === 0) {
-    setStatus("No selectable audio tracks exposed by this browser for the current file.");
+    setStatus("No selectable audio tracks exposed by this browser for the current file.", "trackChange");
     return;
   }
 
@@ -4592,7 +4963,7 @@ function cycleAudioTrack() {
   el.audioTrackSelect.value = String(next);
   const track = audioTracks[next];
   const trackLabel = track.label || track.language || `Track ${next + 1}`;
-  setStatus(`Audio track: ${trackLabel}`);
+  setStatus(`Audio track: ${trackLabel}`, "trackChange");
 }
 
 function cycleSubtitleTrack() {
@@ -4606,7 +4977,6 @@ function cycleSubtitleTrack() {
 
   el.subtitleTrackSelect.value = options[next].value;
   onSubtitleTrackChanged();
-  setStatus(`Subtitle: ${options[next].textContent}`);
 }
 
 function persistVolumeSetting() {
@@ -4711,6 +5081,22 @@ function applyAudioDelayProcessing() {
 function applyPlaybackPreferences() {
   state.settings.shortcuts = normalizeShortcutBindings(state.settings.shortcuts);
   state.settings.preferGpuEnhancementNormalMode = state.settings.preferGpuEnhancementNormalMode !== false;
+  state.settings.showFullscreenFilenameOverlay = state.settings.showFullscreenFilenameOverlay !== false;
+  state.settings.overlayShowVolume = state.settings.overlayShowVolume !== false;
+  state.settings.overlayShowZoom = state.settings.overlayShowZoom !== false;
+  state.settings.overlayShowFileLoad = state.settings.overlayShowFileLoad !== false;
+  state.settings.overlayShowSection = state.settings.overlayShowSection !== false;
+  state.settings.overlayShowPlaybackSpeed = state.settings.overlayShowPlaybackSpeed !== false;
+  state.settings.overlayShowTrackChanges = state.settings.overlayShowTrackChanges !== false;
+  state.settings.overlayShowFrameMode = state.settings.overlayShowFrameMode !== false;
+  state.settings.overlayShowAspectRatio = state.settings.overlayShowAspectRatio !== false;
+  state.settings.overlayShowGeneralMessages = state.settings.overlayShowGeneralMessages !== false;
+  state.settings.persistentTimeOverlay = Boolean(state.settings.persistentTimeOverlay);
+  state.settings.overlayDurationMs = clamp(
+    Number(state.settings.overlayDurationMs || defaults.overlayDurationMs),
+    OVERLAY_DURATION_MIN_MS,
+    OVERLAY_DURATION_MAX_MS
+  );
   state.settings.shortcutSectionNavigation = Boolean(state.settings.shortcutSectionNavigation);
   state.settings.enforceFrameConstraints = state.settings.enforceFrameConstraints !== false;
 
@@ -4743,6 +5129,7 @@ function applyPlaybackPreferences() {
   applyAudioDelayProcessing();
   updatePlaylistModeButtons();
   applyGpuEnhancementCompatibilityMode();
+  updatePersistentTimeOverlay();
 }
 
 function normalizeShortcutBindings(rawBindings) {
@@ -5155,6 +5542,9 @@ function runShortcutAction(actionId) {
     case "fullscreenToggle":
       toggleFullscreen();
       return true;
+    case "timeOverlayToggle":
+      togglePersistentTimeOverlay();
+      return true;
     case "nextFile":
       if (state.settings.shortcutSectionNavigation && jumpToAdjacentSection(1, { announce: true })) {
         return true;
@@ -5248,6 +5638,39 @@ function syncSettingsUI() {
   el.rememberVolume.checked = Boolean(state.settings.rememberVolume);
   el.rememberSpeed.checked = Boolean(state.settings.rememberSpeed);
   el.showSubtitlesByDefault.checked = Boolean(state.settings.showSubtitlesByDefault);
+  if (el.showFullscreenFilenameOverlay) {
+    el.showFullscreenFilenameOverlay.checked = state.settings.showFullscreenFilenameOverlay !== false;
+  }
+  if (el.overlayShowVolume) {
+    el.overlayShowVolume.checked = state.settings.overlayShowVolume !== false;
+  }
+  if (el.overlayShowZoom) {
+    el.overlayShowZoom.checked = state.settings.overlayShowZoom !== false;
+  }
+  if (el.overlayShowFileLoad) {
+    el.overlayShowFileLoad.checked = state.settings.overlayShowFileLoad !== false;
+  }
+  if (el.overlayShowSection) {
+    el.overlayShowSection.checked = state.settings.overlayShowSection !== false;
+  }
+  if (el.overlayShowPlaybackSpeed) {
+    el.overlayShowPlaybackSpeed.checked = state.settings.overlayShowPlaybackSpeed !== false;
+  }
+  if (el.overlayShowTrackChanges) {
+    el.overlayShowTrackChanges.checked = state.settings.overlayShowTrackChanges !== false;
+  }
+  if (el.overlayShowFrameMode) {
+    el.overlayShowFrameMode.checked = state.settings.overlayShowFrameMode !== false;
+  }
+  if (el.overlayShowAspectRatio) {
+    el.overlayShowAspectRatio.checked = state.settings.overlayShowAspectRatio !== false;
+  }
+  if (el.overlayShowGeneralMessages) {
+    el.overlayShowGeneralMessages.checked = state.settings.overlayShowGeneralMessages !== false;
+  }
+  if (el.overlayDurationSeconds) {
+    el.overlayDurationSeconds.value = String((Number(state.settings.overlayDurationMs || defaults.overlayDurationMs) / 1000).toFixed(1));
+  }
   el.themeSelect.value = state.settings.theme;
   el.seekStep.value = String(state.settings.seekStep);
 
@@ -5271,6 +5694,21 @@ function saveSettingsFromUI() {
   state.settings.rememberVolume = el.rememberVolume.checked;
   state.settings.rememberSpeed = el.rememberSpeed.checked;
   state.settings.showSubtitlesByDefault = el.showSubtitlesByDefault.checked;
+  state.settings.showFullscreenFilenameOverlay = Boolean(el.showFullscreenFilenameOverlay?.checked);
+  state.settings.overlayShowVolume = Boolean(el.overlayShowVolume?.checked);
+  state.settings.overlayShowZoom = Boolean(el.overlayShowZoom?.checked);
+  state.settings.overlayShowFileLoad = Boolean(el.overlayShowFileLoad?.checked);
+  state.settings.overlayShowSection = Boolean(el.overlayShowSection?.checked);
+  state.settings.overlayShowPlaybackSpeed = Boolean(el.overlayShowPlaybackSpeed?.checked);
+  state.settings.overlayShowTrackChanges = Boolean(el.overlayShowTrackChanges?.checked);
+  state.settings.overlayShowFrameMode = Boolean(el.overlayShowFrameMode?.checked);
+  state.settings.overlayShowAspectRatio = Boolean(el.overlayShowAspectRatio?.checked);
+  state.settings.overlayShowGeneralMessages = Boolean(el.overlayShowGeneralMessages?.checked);
+  state.settings.overlayDurationMs = clamp(
+    Math.round(Number(el.overlayDurationSeconds?.value || defaults.overlayDurationMs / 1000) * 1000),
+    OVERLAY_DURATION_MIN_MS,
+    OVERLAY_DURATION_MAX_MS
+  );
   state.settings.theme = el.themeSelect.value;
   state.settings.seekStep = clamp(Number(el.seekStep.value), 1, 60);
   if (el.frameModeSelect) {
@@ -5453,6 +5891,10 @@ function onAudioTrackChanged() {
   for (let i = 0; i < audioTracks.length; i += 1) {
     audioTracks[i].enabled = i === selected;
   }
+
+  const track = audioTracks[selected];
+  const trackLabel = track?.label || track?.language || `Track ${selected + 1}`;
+  setStatus(`Audio track: ${trackLabel}`, "trackChange");
 }
 
 function updateSubtitleTrackSelector() {
@@ -5507,12 +5949,14 @@ function onSubtitleTrackChanged() {
     resetExternalSubtitleState();
     updateTrackSelectors();
     saveSettings();
+    setStatus("Subtitles: off", "trackChange");
     return;
   }
 
   if (value === "custom") {
     state.settings.showSubtitlesByDefault = true;
     saveSettings();
+    setStatus("Subtitles: external", "trackChange");
     return;
   }
 
@@ -5524,6 +5968,8 @@ function onSubtitleTrackChanged() {
     }
     hideSubtitleOverlay();
     saveSettings();
+    const selectedLabel = el.subtitleTrackSelect.options[el.subtitleTrackSelect.selectedIndex]?.textContent || "Embedded subtitle";
+    setStatus(`Subtitles: ${selectedLabel}`, "trackChange");
   }
 }
 
@@ -6111,6 +6557,14 @@ function setupFullscreenOrientationHandling() {
   document.addEventListener("fullscreenchange", async () => {
     const isFullscreen = Boolean(document.fullscreenElement);
     applyGpuEnhancementCompatibilityMode();
+
+    if (isFullscreen && state.settings.showFullscreenFilenameOverlay !== false) {
+      const currentFile = state.playlist[state.currentIndex];
+      if (currentFile?.name) {
+        setStatus(`Fullscreen: ${currentFile.name}`, "fullscreenFilename");
+      }
+    }
+
     if (!isFullscreen) {
       try {
         if (screen.orientation?.unlock) {
